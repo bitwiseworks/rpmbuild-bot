@@ -2,9 +2,20 @@
 
 # This script takes a .spec file and performs a full rebuild of RPM packages
 # for all acrhitectures supported by netlabs.org RPM repositories using the
-# environment from the netlabs_rpmbuild_env.sh script (see that file for more
+# environment from the netlabs-rpmbuild-env.sh script (see that file for more
 # information about the environment). It also generates a .zip package from
 # the last listed architecture (usualliy i386).
+#
+# Usage:
+#
+#   sh -c 'netlabs-rpmbuild.all.sh myapp.spec [VAR=VAL]'
+#
+# where 'myapp.spec' is the name of the spec file and VAR=VAL may be used to
+# override values of variables defined in netlabs-rpmbuild-env.sh or to define
+# new variables for configure etc. Variables starting from `NETLABS` are used to
+# set up the behavior of this script and are not exported to the environment;
+# all other variables are expoted (so that they can bee seen in child shells).
+#
 
 run()
 {
@@ -44,6 +55,20 @@ spec_name="${spec##*/}"
 
 # Set up official netlabs.org rpmbuild environment
 . netlabs-rpmbuild-env.sh
+
+# Override variables from the command line, if any
+shift
+while test "$1" != "" ; do
+    case "$1" in
+    NETLABS*=*)
+        eval "$1"
+    ;;
+    *=*)
+        eval "export $1"
+    ;;
+    esac
+    shift
+done
 
 test -n "$NETLABS_RPM_ARCH_LIST" || die "NETLABS_RPM_ARCH_LIST is empty."
 
