@@ -91,13 +91,13 @@ log_run "$spec_name.srpm.log" rpmbuild -bs "$spec"
 echo "Creating ZIP (logging to $spec_name.zip.log)..."
 create_zip()
 {(
-  zip=`grep "src.rpm" "$spec_name.srpm.log" | sed -e "s#^[a-zA-Z ]*: *##g" -e "s#.src.rpm##g" | tr . _`.zip
+  zip=`grep "src.rpm" "$spec_name.srpm.log" | sed -e "s#^[a-zA-Z ]*: *##g" -e "s#\.src\.rpm##g" | tr . _`.zip
   zip_dir="${zip%/*}/../zip"
   zip="$zip_dir/${zip##*/}"
   echo "Will create '$zip'"
   run mkdir -p "$zip_dir"
   rm -r "@unixroot" 2> /dev/null
-  for rpm in `grep "$zip_arch.rpm\|noarch.rpm" "$spec_name.$zip_arch.log" | sed "s#^[a-zA-Z ]*: *##g"` ; do
+  for rpm in `grep "$zip_arch\.rpm\|noarch\.rpm" "$spec_name.$zip_arch.log" | sed "s#^[a-zA-Z ]*: *##g"` ; do
     echo "Unpacking $rpm..."
     run rpm2cpio "$rpm" | cpio -idm
   done
