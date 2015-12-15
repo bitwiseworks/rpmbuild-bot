@@ -61,10 +61,10 @@ shift
 while test "$1" != "" ; do
     case "$1" in
     NETLABS*=*)
-        eval "$1"
+        eval "${1%%=*}=\"${1#*=}\""
     ;;
     *=*)
-        eval "export $1"
+        eval "export ${1%%=*}=\"${1#*=}\""
     ;;
     esac
     shift
