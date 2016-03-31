@@ -20,4 +20,4 @@ export FFLAGS=
 export LDFLAGS=
 
 # Variables for netlabs scripts
-NETLABS_RPM_ARCH_LIST="pentium4 i686 i386"      # last arch is used for ZIP
+NETLABS_RPM_ARCH_LIST="pentium4 i686"      # last arch is used for ZIP
