@@ -1,17 +1,26 @@
 #!/bin/sh
 
 #
-# rpmbuild-bot.sh: RPM Build Bot version 1.0.
+# rpmbuild-bot.sh: RPM Build Bot version 1.0.1.
 #
 # Author: Dmitriy Kuminov <coding@dmik.org>
 #
 # This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
 # WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
 #
+# History
+# -------
+#
+# 1.0.1 [01.04.2016]
+#   - Fix bad variable name error.
+#   - Understand .CMD extension in REXX wrapper.
+# 1.0 [01.04.2016]
+#   - Initial version.
+#
 # Synopsis
 # --------
 #
-# This script performs a build of RPM pakcages from a given .spec file in
+# This script performs a build of RPM packages from a given .spec file in
 # controlled environment to guarantee consistent results when building RPMs
 # different machines. It uses a separate file rpmbuild-bot-env.sh located
 # in the same directory to set up the environment and control the build
@@ -29,7 +38,7 @@
 # will show the exact location). This may be overriden by giving a spec file
 # with a path specification.
 #
-# The second argument defines the command to perfrm. The default command is
+# The second argument defines the command to perform. The default command is
 # "build". The following sections will describe each command.
 #
 # Building packages
@@ -201,24 +210,24 @@ force their removal if you are sure they should be discarded."
   # Generate RPMs.
   for arch in $RPMBUILD_BOT_ARCH_LIST ; do
     echo "Creating RPMs for '$arch' target (logging to $log_base.$arch.log)..."
-    log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
+#    log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
   done
 
   # Generate SRPM.
   echo "Creating SRPM (logging to $log_base.srpm.log)..."
-  log_run "$log_base.srpm.log" rpmbuild -bs "$spec_full"
+#  log_run "$log_base.srpm.log" rpmbuild -bs "$spec_full"
 
   # Find SRPM file name in the log.
   local src_rpm=`grep "^Wrote: \+.*\.src\.rpm$" "$log_base.srpm.log" | sed -e "s#^Wrote: \+##g"`
   [ -n "$src_rpm" ] || die "Cannot find .src.rpm file name in '$log_base.srpm.log'."
 
-  # Find pacakge version.
+  # Find package version.
   local ver_full="${src_rpm%.src.rpm}"
   local ver_full="${ver_full##*/${spec_name}-}"
   [ -n "$ver_full" ] || die "Cannot deduce package version from '$src_rpm'."
 
-  # Find all RPM packages for the base arch.
-  local rpms=`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_base.$base_arch.log" | sed -e "s#^Wrote: \+##g"`
+  # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
+  local rpms="`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_base.$base_arch.log" | sed -e "s#^Wrote: \+##g"`"
   [ -n "$rpms" ] || die "Cannot find .$base_arch.rpm/.noarch.rpm file names in '$log_base.base_arch.log'."
 
   local ver_full_zip=`echo $ver_full | tr . _`
@@ -230,7 +239,8 @@ force their removal if you are sure they should be discarded."
   {(
     run cd "$zip_dir"
     rm -r "@unixroot" 2> /dev/null
-    for f in "$rpms" ; do
+    # Note no quoters around $rpms - it's to split at EOL.
+    for f in $rpms ; do
       echo "Unpacking $f..."
       run rpm2cpio "$f" | cpio -idm
     done
@@ -252,9 +262,9 @@ force their removal if you are sure they should be discarded."
   done
   # Save other arch RPMs.
   for arch in ${RPMBUILD_BOT_ARCH_LIST%${base_arch}} ; do
-    rpms=`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`
+    rpms="`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
     [ -n "$rpms" ] || die "Cannot find .$arch.rpm file names in '$log_base.arch.log'."
-    for f in "$rpms" ; do
+    for f in $rpms ; do
       echo "$f" >> "$ver_list"
     done
   done
