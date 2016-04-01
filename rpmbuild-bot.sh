@@ -210,12 +210,12 @@ force their removal if you are sure they should be discarded."
   # Generate RPMs.
   for arch in $RPMBUILD_BOT_ARCH_LIST ; do
     echo "Creating RPMs for '$arch' target (logging to $log_base.$arch.log)..."
-#    log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
+    log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
   done
 
   # Generate SRPM.
   echo "Creating SRPM (logging to $log_base.srpm.log)..."
-#  log_run "$log_base.srpm.log" rpmbuild -bs "$spec_full"
+  log_run "$log_base.srpm.log" rpmbuild -bs "$spec_full"
 
   # Find SRPM file name in the log.
   local src_rpm=`grep "^Wrote: \+.*\.src\.rpm$" "$log_base.srpm.log" | sed -e "s#^Wrote: \+##g"`
