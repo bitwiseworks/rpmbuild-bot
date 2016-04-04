@@ -278,7 +278,7 @@ test_cmd()
   echo "Spec file: $spec_full"
 
   local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
-  local cmds="--define dist%%nil"
+  local cmds=
 
   [ -z "$command_arg" ] && command_arg="all"
 
@@ -311,7 +311,7 @@ test_cmd()
   fi
 
   echo "Doing test RPM build for '$base_arch' target (logging to $log_file)..."
-  log_run "$log_file" rpmbuild.exe --target=$base_arch $cmds $spec_full
+  log_run "$log_file" rpmbuild.exe "--define=dist %nil" --target=$base_arch $cmds $spec_full
 
   # Show the generated RPMs when appropriate.
   if [ "$command_arg" = "all" -o "$command_arg" = "pack" ] ; then
