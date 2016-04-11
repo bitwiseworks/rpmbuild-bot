@@ -31,7 +31,7 @@
 # -----
 #
 # > rpmbuild-bot.sh SPEC[=VERSION]
-# >                 [ upload[=REPO] | test[=MODE] | clean | remove[=REPO] ]
+# >                 [ upload[=REPO] | test[=MODE] | clean[=test] | remove[=REPO] ]
 # >                 [-f]
 #
 # MYAPP is the name of the RPM package spec file (extension is optional,
@@ -123,6 +123,13 @@
 # when the successful build needs to be canceled for some reason (wrong source
 # tree state, wrong patches etc.). Note that normally you don't need to use
 # this command; it's an emergency-only tool.
+#
+# The "clean" command needs log files from the "build" command and will fail
+# otherwise.
+#
+# If the "clean" command is given a "test" argument, it will clean up the
+# results of the "test" command instead of "build". The log file from the
+# "test" command needs to be present or the command will fail.
 #
 # Removing packages
 # -----------------
@@ -236,9 +243,6 @@ usage()
 
 build_cmd()
 {
-  # Check settings.
-  test -n "$RPMBUILD_BOT_ARCH_LIST" || die "RPMBUILD_BOT_ARCH_LIST is empty."
-
   local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
 
   echo "Spec file: $spec_full"
@@ -381,7 +385,7 @@ test_cmd()
     local rpms=`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`
     if [ -n "$rpms" ] ; then
       echo "Successfully generated the following RPMs:"
-      for f in $rpms ; do
+      for f in $rpms; do
         echo "$f"
       done
     else
@@ -462,6 +466,29 @@ packages in the repository should be discarded."
 
 clean_cmd()
 {
+  if [ "$command_arg" = "test" ] ; then
+    # Cleanup after "test" command.
+    local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
+    local log_file="$log_dir/test/$spec_name.log"
+
+    [ -f "$log_file" ] || die "File '$test_log' is not found."
+
+    local rpms=`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`
+    if [ -n "$rpms" ] ; then
+      for f in $rpms; do
+        echo "Removing $f..."
+        run rm -f "$f"
+      done
+      echo "Removing $log_file[.bak]..."
+      run rm -f "$log_file" "$log_file".bak
+    else
+      die "Cannot find .$base_arch.rpm/.noarch.rpm file names in '$log_file'."
+    fi
+
+    return
+  fi
+
+  # Cleanup after "build command".
   [ -f "$spec_list" ] || die \
 "File '$spec_list' is not found.
 You man need to build the packages using the 'build' command."
@@ -611,6 +638,9 @@ echo "Command:   $command $options"
 
 # Set up the rpmbuild-bot environment.
 . "${0%%.sh}-env.sh"
+
+# Check common settings.
+test -n "$RPMBUILD_BOT_ARCH_LIST" || die "RPMBUILD_BOT_ARCH_LIST is empty."
 
 run eval "${command_name}_cmd"
 
