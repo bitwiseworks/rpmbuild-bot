@@ -30,7 +30,9 @@
 # Usage
 # -----
 #
-# > rpmbuild-bot.sh SPEC [ upload[=REPO] | test[=MODE] ] [-f]
+# > rpmbuild-bot.sh SPEC[=VERSION]
+# >                 [ upload[=REPO] | test[=MODE] | clean | remove[=REPO] ]
+# >                 [-f]
 #
 # MYAPP is the name of the RPM package spec file (extension is optional,
 # .spec is assumed). The spec file is searched in the SPECS directory of the
@@ -113,6 +115,33 @@
 # Upon successful completion, the "upload" command will remove all uploaded
 # RPM and ZIP packages and will move all "build" log files to logs/archive.
 #
+# Cleaning packages
+# -----------------
+#
+# The "clean" command will delete packages built with the "build" command
+# and their log files without uploading them to a repository. This is useful
+# when the successful build needs to be canceled for some reason (wrong source
+# tree state, wrong patches etc.). Note that normally you don't need to use
+# this command; it's an emergency-only tool.
+#
+# Removing packages
+# -----------------
+#
+# The "remove" command allows to remove a particular version of the packages
+# built with the "build" command and uploaded with the "upload" command from a
+# repository. This is useful when the successful build needs to be canceled for
+# some reason (wrong source tree state, wrong patches etc.). Note that normally
+# you don't need to use this command; it's an emergency-only tool.
+#
+# The "remove" command needs log files from the "build" and "upload" commands
+# and will fail otherwise. It also requires the VERSION argument for the SPEC
+# parameter to be given (to specify the version of the packages to remove) and
+# accepts the REPO argument just like the "upload" command does (to specify a
+# repository to remove the packages from).
+#
+# Note that the log files from the "build" and "upload" commands are also removed
+# by this command upon sucessful package removal.
+#
 # Return value
 # ------------
 #
@@ -175,19 +204,25 @@ read_file_list()
 {
   # $1 = file list list filename
   # $2 = var name where to save read file names (optional)
+  # $3 = function name to call for each file (optional)
 
+  local list="$1"
   local _read_file_list_ret=
+
   # Check timestamps.
   while read l; do
-    local f="${l#*|}"
-    local t="${l%%|*}"
-    [ "$f" = "$t" ] && die "Line '$l' in '$1' does not contain timestamps."
-    local a=`stat -c '%Y' "$f"`
-    if [ "$t" != "$a" ] ; then
-      die "Recorded timestamp $t doesn't match actual timestamp $a for file '$f'."
+    local file="${l#*|}"
+    local ts="${l%%|*}"
+    [ "$file" = "$ts" ] && die "Line '$l' in '$list' does not contain timestamps."
+    [ -n "$3" ] && eval $3
+    [ -f "$file" ] || die "File '$file' is not found."
+    echo "Checking tmestamp of $file..."
+    local act_ts=`stat -c '%Y' "$file"`
+    if [ "$ts" != "$act_ts" ] ; then
+      die "Recorded timestamp $ts doesn't match actual timestamp $act_ts for '$file'."
     fi
-    _read_file_list_ret="$_read_file_list_ret${_read_file_list_ret:+ }$f"
-  done < "$1"
+    _read_file_list_ret="$_read_file_list_ret${_read_file_list_ret:+ }$file"
+  done < "$list"
   # Return the files (if requested).
   [ -n "$2" ] && eval "$2=\$_read_file_list_ret"
 }
@@ -355,6 +390,32 @@ test_cmd()
   fi
 }
 
+repo_dir_for_file()
+{
+  # $1 = input file name
+  # $2 = var name to save dir to
+
+  [ -n "$1" -a -n "$2" ] || die "Invalid arguments."
+
+  local _repo_dir_for_file_ret=
+  case "$1" in
+    *.src.rpm)
+      eval _repo_dir_for_file_ret="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_srpm"
+      ;;
+    *.*.rpm)
+      local arch="${1%.rpm}"
+      arch="${arch##*.}"
+      [ -n "$arch" ] || die "No arch spec in file name '$1'."
+      eval _repo_dir_for_file_ret="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm"
+      ;;
+    *.zip)
+      eval _repo_dir_for_file_ret="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_zip"
+      ;;
+  esac
+
+  eval "$2=\$_repo_dir_for_file_ret"
+}
+
 upload_cmd()
 {
   # Check settings.
@@ -374,23 +435,9 @@ You may need to build the packages using the 'build' command."
   local files=
   read_file_list "$spec_list" files
   for f in $files; do
-    case "$f" in
-      *.src.rpm)
-        eval local d="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_srpm"
-        ;;
-      *.*.rpm)
-        local arch="${f%.rpm}"
-        arch="${arch##*.}"
-        [ -n "$arch" ] || die "No arch spec in file name '$f' in '$spec_list'."
-        eval d="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm"
-        ;;
-      *.zip)
-        eval d="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_zip"
-        ;;
-      *)
-        die "Unsupported file name '$f' in '$spec_list'."
-        ;;
-    esac
+    local d=
+    repo_dir_for_file "$f" d
+    [ -n "$d" ] || die "Unsupported file name '$f' in '$spec_list'."
     [ -d "$d" ] || die "'$d' is not a directory."
     [ -f "$d/${f##*/}" -a -z "$force" ] && die \
 "File '$d/${f##*/}' already exists.
@@ -411,6 +458,60 @@ packages in the repository should be discarded."
   rm -f "$log_dir/archive/$spec_name".*.log "$log_dir/archive/$spec_name".list
   echo "Moving '$spec_name' logs to $log_dir/archive..."
   run mv "$log_base".*.log "$log_base".*.list "$log_base".list "$log_dir/archive/"
+}
+
+clean_cmd()
+{
+  [ -f "$spec_list" ] || die \
+"File '$spec_list' is not found.
+You man need to build the packages using the 'build' command."
+
+  local files=
+  read_file_list "$spec_list" files
+
+  for f in $files; do
+    echo "Removing $f..."
+    run rm -f "$f"
+  done
+
+  echo "Removing '$spec_name' logs from $log_dir..."
+  rm -f "$log_base".*.log "$log_base".*.list "$log_base".list
+}
+
+remove_cmd()
+{
+  # Check settings.
+  [ -n "$spec_ver" ] || die "SPEC parameter lacks version specification."
+
+  test -n "$RPMBUILD_BOT_UPLOAD_REPO_LIST" || die "RPMBUILD_BOT_UPLOAD_REPO_LIST is empty."
+
+  local repo="$command_arg"
+  [ -z "$repo" ] && repo="${RPMBUILD_BOT_UPLOAD_REPO_LIST%% *}"
+
+  check_dir_var "RPMBUILD_BOT_UPLOAD_${repo}_DIR"
+
+  eval local base="\$RPMBUILD_BOT_UPLOAD_${repo}_DIR"
+
+  local ver_list="$log_dir/archive/$spec_name.$spec_ver.list"
+  [ -f "$ver_list" ] || die "File '$ver_list' is not found."
+
+  local files=
+  read_file_list "$ver_list" files 'local dir=; repo_dir_for_file $file dir; file="${dir}/${file##*/}"'
+
+  for f in $files; do
+    echo "Removing $f..."
+    run rm -f "$f"
+  done
+
+  echo "Removing $ver_list..."
+  run rm -f "$ver_list"
+
+  # Also remove the logs of last "build" if we are removing the last "build" package.
+  if [ -L "$log_dir/archive/$spec_name.list" -a \
+       `readlink "$log_dir/archive/$spec_name.list"` = "$spec_name.$spec_ver.list" ] ; then
+    echo "Removing '$spec_name' logs from $log_dir/archive..."
+    rm -f "$log_dir/archive/$spec_name".*.log "$log_dir/archive/$spec_name".list
+  fi
 }
 
 #
@@ -447,12 +548,22 @@ done
 [ -n "$spec" ] || usage
 [ -z "$command" ] && command="build"
 
+spec_ver="${spec#*=}"
+spec="${spec%=*}"
+[ "$spec" = "$spec_ver" ] && spec_ver=
+
 command_name="${command%=*}"
 command_arg="${command#*=}"
 [ "$command_name" = "$command_arg" ] && command_arg=
 
+need_spec_file=
+
+# Validate commands.
 case "$command_name" in
-  build|upload|test)
+  build|test)
+    need_spec_file=1
+    ;;
+  upload|clean|remove)
     ;;
   *) usage
     ;;
@@ -478,7 +589,7 @@ fi
 
 spec_name="${spec_name%.spec}"
 
-[ -f "$spec_full" ] || die "Spec file '$spec_full' is not found."
+[ -z "$need_spec_file" -o -f "$spec_full" ] || die "Spec file '$spec_full' is not found."
 
 # Prepare some (non-rpmbuild-standard) directories.
 run mkdir -p "$log_dir"
