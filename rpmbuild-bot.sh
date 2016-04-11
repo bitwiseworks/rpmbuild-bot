@@ -223,7 +223,11 @@ force their removal if you are sure they should be discarded."
 
   # Find package version.
   local ver_full="${src_rpm%.src.rpm}"
-  local ver_full="${ver_full##*/${spec_name}-}"
+  ver_full="${ver_full##*/}"
+  [ "${ver_full%%-[0-9]*}" = "$spec_name" ] || die \
+"SRPM name '${src_rpm##*/}' does not match .spec name ('$spec_name').
+Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' tag to '$spec_name'."
+  ver_full="${ver_full#${spec_name}-}"
   [ -n "$ver_full" ] || die "Cannot deduce package version from '$src_rpm'."
 
   # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
