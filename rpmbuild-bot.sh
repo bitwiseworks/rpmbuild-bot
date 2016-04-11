@@ -171,6 +171,27 @@ check_dir_var()
   [ -d "$val" ] || die "$1 is '$val', not a valid directory."
 }
 
+read_file_list()
+{
+  # $1 = file list list filename
+  # $2 = var name where to save read file names (optional)
+
+  local _read_file_list_ret=
+  # Check timestamps.
+  while read l; do
+    local f="${l#*|}"
+    local t="${l%%|*}"
+    [ "$f" = "$t" ] && die "Line '$l' in '$1' does not contain timestamps."
+    local a=`stat -c '%Y' "$f"`
+    if [ "$t" != "$a" ] ; then
+      die "Recorded timestamp $t doesn't match actual timestamp $a for file '$f'."
+    fi
+    _read_file_list_ret="$_read_file_list_ret${_read_file_list_ret:+ }$f"
+  done < "$1"
+  # Return the files (if requested).
+  [ -n "$2" ] && eval "$2=\$_read_file_list_ret"
+}
+
 usage()
 {
     echo "Usage:"
@@ -198,10 +219,13 @@ force their removal if you are sure they should be discarded."
     fi
 
     echo "Detected successful build in $spec_list, cleaning up due to -f option..."
-    while read f; do
+    local files=
+    read_file_list "$spec_list" files
+    for f in $files; do
       echo "Removing $f..."
-      rm -f "$f"
-    done < "$spec_list"
+      run rm -f "$f"
+    done
+    unset files
 
     echo "Removing $log_base.*.log and .list files..."
     rm -f "$log_base".*.log "$log_base".*.list "$log_base".list
@@ -258,18 +282,18 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
 
   # Generate list of all generated packages for further reference.
   echo "Creating list file ($ver_list)..."
-  echo "$src_rpm" > "$ver_list"
-  echo "$zip" >> "$ver_list"
+  echo `stat -c '%Y' "$src_rpm"`"|$src_rpm" > "$ver_list"
+  echo `stat -c '%Y' "$zip"`"|$zip" >> "$ver_list"
   # Save base arch RPMs.
-  for f in "$rpms" ; do
-    echo "$f" >> "$ver_list"
+  for f in $rpms ; do
+    echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
   done
   # Save other arch RPMs.
   for arch in ${RPMBUILD_BOT_ARCH_LIST%${base_arch}} ; do
     rpms="`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
     [ -n "$rpms" ] || die "Cannot find .$arch.rpm file names in '$log_base.arch.log'."
     for f in $rpms ; do
-      echo "$f" >> "$ver_list"
+      echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
     done
   done
 
@@ -322,7 +346,7 @@ test_cmd()
     local rpms=`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`
     if [ -n "$rpms" ] ; then
       echo "Successfully generated the following RPMs:"
-      for f in "$rpms" ; do
+      for f in $rpms ; do
         echo "$f"
       done
     else
@@ -345,9 +369,11 @@ upload_cmd()
 
   [ -f "$spec_list" ] || die \
 "File '$spec_list' is not found.
-You man need to build the packages using the 'build' command."
+You may need to build the packages using the 'build' command."
 
-  while read f; do
+  local files=
+  read_file_list "$spec_list" files
+  for f in $files; do
     case "$f" in
       *.src.rpm)
         eval local d="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_srpm"
@@ -372,13 +398,13 @@ Use the -f option to force uploading if you are sure the existing
 packages in the repository should be discarded."
     echo "Copying $f to $d..."
     run cp -p "$f" "$d"
-  done < "$spec_list"
+  done
 
   # On success, delete the uploaded packages and archive log files.
-  while read f; do
+  for f in $files; do
     echo "Removing $f..."
-    rm -f "$f"
-  done < "$spec_list"
+    run rm -f "$f"
+  done
 
   # Note: versioned .list file will remain in archive forever (for further reference).
   echo "Removing old '$spec_name' logs from $log_dir/archive..."
