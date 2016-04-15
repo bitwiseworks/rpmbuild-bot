@@ -91,7 +91,7 @@
 #           to be executed before). May be run multiple times.
 #   pack    Create the RPM packages (requires "prep", "build" and "install"
 #           to be executed before). Note that this step will also execute
-#           the %clean section so that a new "build" + "install" execution is
+#           the %clean section so that a new "install" execution is
 #           necessary for "pack" to succeed.
 #
 # When no MODE argument is given, all steps are executed in a proper order.
@@ -382,7 +382,8 @@ test_cmd()
 
   # Show the generated RPMs when appropriate.
   if [ "$command_arg" = "all" -o "$command_arg" = "pack" ] ; then
-    local rpms=`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`
+    # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
+    local rpms="`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`"
     if [ -n "$rpms" ] ; then
       echo "Successfully generated the following RPMs:"
       for f in $rpms; do
@@ -473,7 +474,8 @@ clean_cmd()
 
     [ -f "$log_file" ] || die "File '$test_log' is not found."
 
-    local rpms=`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`
+    # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
+    local rpms="`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`"
     if [ -n "$rpms" ] ; then
       for f in $rpms; do
         echo "Removing $f..."
