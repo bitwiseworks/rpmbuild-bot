@@ -34,7 +34,7 @@
 # >                 [ upload[=REPO] | test[=MODE] | clean[=test] | remove[=REPO] ]
 # >                 [-f]
 #
-# MYAPP is the name of the RPM package spec file (extension is optional,
+# SPEC is the name of the RPM package spec file (extension is optional,
 # .spec is assumed). The spec file is searched in the SPECS directory of the
 # rpmbuild tree (usually $USER/rpmbuild/SPECS, rpmbuild --eval='%_specdir'
 # will show the exact location). This may be overriden by giving a spec file
@@ -68,6 +68,13 @@
 # log files and the corresponding package files if you are absolutely sure they
 # should be discarded.
 #
+# The "build" command will also check if there is a directory named SPEC in the
+# same directory where the given .spec file resides. If such a directory
+# exists, all files in it are assumed to be auxiliary source files used by the
+# .spec file via SourceN: directives. These files will be automatically copied
+# to the SOURCES directory in the rpmbuild tree befure starting the build
+# process.
+#
 # Doing test builds
 # -----------------
 #
@@ -99,6 +106,10 @@
 # The results of the "test" command are stored in a log file in the logs/test
 # directory of the rpmbuild tree. The previous log file, if any, is given a .bak
 # extension (the previous .bak file will be deleted).
+#
+# The "test" command will copy auxiliary source files for the .spec file, if any,
+# to the proper location before rpmbuild execution -- the same way the "build"
+# command does it.
 #
 # Uploading packages
 # ------------------
@@ -241,12 +252,39 @@ usage()
     exit 255
 }
 
+sync_aux_src()
+{
+  [ -n "$src_dir" ] || die "src_dir is empty."
+  [ -n "$spec_full" ] || die "spec_full is empty."
+
+  # Aux source dir is expected along the .spec file.
+  local aux_src_dir="${spec_full%.spec}"
+
+  # Return early if there is no aux source dir.
+  [ -d "$aux_src_dir" ] || return
+
+  echo "Copying auxiliary sources for '$spec' to $src_dir..."
+
+  for f in "$aux_src_dir"/* ; do
+    local ts=`stat -c '%Y' "$f"`
+    local trg_ts=
+    local trg_f="$src_dir/${f##*/}"
+    [ -f "$trg_f" ] && trg_ts=`stat -c '%Y' "$trg_f"`
+    if [ "$ts" != "$trg_ts" ] ; then
+      echo "Copying $f..."
+      run cp -p "$f" "$trg_f"
+    fi
+  done
+}
+
 build_cmd()
 {
   local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
 
   echo "Spec file: $spec_full"
   echo "Targets:   $RPMBUILD_BOT_ARCH_LIST + SRPM + ZIP ($base_arch)"
+
+  sync_aux_src
 
   if [ -f "$spec_list" ] ; then
     if [ -z "$force" ] ; then
@@ -343,6 +381,8 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
 test_cmd()
 {
   echo "Spec file: $spec_full"
+
+  sync_aux_src
 
   local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
   local cmds=
@@ -599,7 +639,11 @@ case "$command_name" in
 esac
 
 # Query all rpmbuild macros in a single run as it may be slow.
-eval `rpmbuild.exe --eval='rpmbuild_dir="%_topdir" ; spec_dir="%_specdir"' | tr '\\\' /`
+eval `rpmbuild.exe --eval='rpmbuild_dir="%_topdir" ; spec_dir="%_specdir" ; src_dir="%_sourcedir"' | tr '\\\' /`
+
+[ -n "$rpmbuild_dir" -a -d "$rpmbuild_dir" ] || die "Falied to get %_topdir from rpmbuild or not directory ($rpmbuild_dir)."
+[ -n "$spec_dir" -a -d "$spec_dir" ] || die "Falied to get %_specdir from rpmbuild or not directory ($spec_dir)."
+[ -n "$src_dir" -a -d "$src_dir" ] || die "Falied to get %_sourcedir from rpmbuild or not directory ($src_dir)."
 
 log_dir="$rpmbuild_dir/logs"
 zip_dir="$rpmbuild_dir/zip"
