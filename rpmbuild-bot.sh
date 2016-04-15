@@ -1,21 +1,12 @@
 #!/bin/sh
 
 #
-# rpmbuild-bot.sh: RPM Build Bot version 1.0.1.
+# rpmbuild-bot.sh: RPM Build Bot version 1.1.0.
 #
 # Author: Dmitriy Kuminov <coding@dmik.org>
 #
 # This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
 # WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
-#
-# History
-# -------
-#
-# 1.0.1 [01.04.2016]
-#   - Fix bad variable name error.
-#   - Understand .CMD extension in REXX wrapper.
-# 1.0 [01.04.2016]
-#   - Initial version.
 #
 # Synopsis
 # --------
@@ -34,7 +25,7 @@
 # >                 [ upload[=REPO] | test[=MODE] | clean[=test] | remove[=REPO] ]
 # >                 [-f]
 #
-# SPEC is the name of the RPM package spec file (extension is optional,
+# MYAPP is the name of the RPM package spec file (extension is optional,
 # .spec is assumed). The spec file is searched in the SPECS directory of the
 # rpmbuild tree (usually $USER/rpmbuild/SPECS, rpmbuild --eval='%_specdir'
 # will show the exact location). This may be overriden by giving a spec file
@@ -164,8 +155,8 @@
 # ------------
 #
 # The rpmbuild-bot.sh script will return a zero exit code upon successful
-# completion and non-zero otherwise. The log files should be inspected to
-# check for a reason of the failure.
+# completion and non-zero otherwise. The script output and log files should be
+# inspected to check for a reason of the failure.
 #
 
 #
@@ -247,9 +238,9 @@ read_file_list()
 
 usage()
 {
-    echo "Usage:"
-    sed -n -e "s/rpmbuild-bot.sh/${0##*/}/g" -e 's/^# > /  /p' < "$0"
-    exit 255
+  echo "Usage:"
+  sed -n -e "s/rpmbuild-bot.sh/${0##*/}/g" -e 's/^# > /  /p' < "$0"
+  exit 255
 }
 
 sync_aux_src()
