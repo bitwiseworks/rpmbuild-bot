@@ -22,7 +22,8 @@
 # -----
 #
 # > rpmbuild-bot.sh SPEC[=VERSION]
-# >                 [ upload[=REPO] | test[=MODE] | clean[=test] | remove[=REPO] ]
+# >                 [ upload[=REPO] | test[=MODE] | clean[=test] |
+# >                   move[=FROM_REPO=TO_REPO] | remove[=REPO] ]
 # >                 [-f]
 #
 # MYAPP is the name of the RPM package spec file (extension is optional,
@@ -80,7 +81,7 @@
 # full build of everything.
 #
 # It is possible to configure which steps of the build to perform using the MODE
-# argument to the "test" command which may take one of the following values:
+# parameter to the "test" command which may take one of the following values:
 #
 #   prep    Execute the %prep section of the spec file only.
 #   build   Execute the %build section only (requres %prep to be executed
@@ -92,7 +93,7 @@
 #           the %clean section so that a new "install" execution is
 #           necessary for "pack" to succeed.
 #
-# When no MODE argument is given, all steps are executed in a proper order.
+# When no MODE parameter is given, all steps are executed in a proper order.
 #
 # The results of the "test" command are stored in a log file in the logs/test
 # directory of the rpmbuild tree. The previous log file, if any, is given a .bak
@@ -107,7 +108,7 @@
 #
 # The "upload" command will upload the packages built with the "build"
 # command to the official distribution channel configured in
-# rpmbuild-bot-env.sh. The REPO argument specifies one of the configured
+# rpmbuild-bot-env.sh. The REPO parameter specifies one of the configured
 # repositories. When REPO is not given, the default repository is used
 # (usually experimental or similar).
 #
@@ -129,9 +130,30 @@
 # The "clean" command needs log files from the "build" command and will fail
 # otherwise.
 #
-# If the "clean" command is given a "test" argument, it will clean up the
+# If the "clean" command is given a "test" parameter, it will clean up the
 # results of the "test" command instead of "build". The log file from the
 # "test" command needs to be present or the command will fail.
+#
+# Moving packages between repositories
+# ------------------------------------
+#
+# The "move" command allows to move a particular version of the packages
+# built with the "build" command and uploaded with the "upload" command from one
+# repository to another one. The "move" command is normally used to move
+# packages from a test repository to a production one when they are ready for
+# wide distribution.
+#
+# The "move" command needs log files from the "build" and "upload" commands
+# and will fail otherwise. It also requires the VERSION parameter for the SPEC
+# argument to be given (to specify the version of the packages to remove) and
+# requires the FROM_REPO=TO_REPO parameter itself to specify the source
+# repository and the target repository, respectively.
+#
+# The log files from the "build" and "upload" commands are not removed by the
+# "move" command so it may be performed multiple times. The current location
+# of the packages is not tracked in the log files so the command will fail
+# if the source repository doesn't have the package files or if the target
+# repository already has them.
 #
 # Removing packages
 # -----------------
@@ -143,13 +165,13 @@
 # you don't need to use this command; it's an emergency-only tool.
 #
 # The "remove" command needs log files from the "build" and "upload" commands
-# and will fail otherwise. It also requires the VERSION argument for the SPEC
-# parameter to be given (to specify the version of the packages to remove) and
-# accepts the REPO argument just like the "upload" command does (to specify a
-# repository to remove the packages from).
+# and will fail otherwise. It also requires the VERSION parameter for the SPEC
+# argument to be given (to specify the version of the packages to remove) and
+# accepts the REPO parameter itself just like the "upload" command does (to
+# specify a repository to remove the packages from).
 #
-# Note that the log files from the "build" and "upload" commands are also removed
-# by this command upon sucessful package removal.
+# Note that the log files from the "build" and "upload" commands are also
+# removed by this command upon sucessful package removal.
 #
 # Return value
 # ------------
@@ -211,15 +233,20 @@ check_dir_var()
 
 read_file_list()
 {
-  # $1 = file list list filename
-  # $2 = var name where to save read file names (optional)
-  # $3 = function name to call for each file (optional)
+  # $1 = file list filename
+  # $2 = var name where to save the list of read file names (optional)
+  # $3 = function name to call for each file (optional), it may assign a new
+  #      file name to $file and also set $file_pre and $file_post that will
+  #      be prepended and appended to $file when saving it to the list in $2
+  #      (but not when checking for file existence and timestamp)
 
   local list="$1"
   local _read_file_list_ret=
 
   # Check timestamps.
   while read l; do
+    local file_pre=
+    local file_post=
     local file="${l#*|}"
     local ts="${l%%|*}"
     [ "$file" = "$ts" ] && die "Line '$l' in '$list' does not contain timestamps."
@@ -230,7 +257,7 @@ read_file_list()
     if [ "$ts" != "$act_ts" ] ; then
       die "Recorded timestamp $ts doesn't match actual timestamp $act_ts for '$file'."
     fi
-    _read_file_list_ret="$_read_file_list_ret${_read_file_list_ret:+ }$file"
+    _read_file_list_ret="$_read_file_list_ret${_read_file_list_ret:+ }$file_pre$file$file_post"
   done < "$list"
   # Return the files (if requested).
   [ -n "$2" ] && eval "$2=\$_read_file_list_ret"
@@ -538,6 +565,42 @@ You man need to build the packages using the 'build' command."
   rm -f "$log_base".*.log "$log_base".*.list "$log_base".list
 }
 
+move_cmd()
+{
+  # Check settings.
+  [ -n "$spec_ver" ] || die "SPEC parameter lacks version specification."
+
+  test -n "$RPMBUILD_BOT_UPLOAD_REPO_LIST" || die "RPMBUILD_BOT_UPLOAD_REPO_LIST is empty."
+
+  local from_repo="${command_arg%%=*}"
+  local to_repo="${command_arg#*=}"
+
+  [ -n "$from_repo" ] || die "FROM_REPO parameter is missing."
+  [ "$from_repo" = "$to_repo" ] && die "TO_REPO parameter is missing (or equals to FROM_REPO)."
+
+  check_dir_var "RPMBUILD_BOT_UPLOAD_${from_repo}_DIR"
+  check_dir_var "RPMBUILD_BOT_UPLOAD_${to_repo}_DIR"
+
+  local ver_list="$log_dir/archive/$spec_name.$spec_ver.list"
+  [ -f "$ver_list" ] || die "File '$ver_list' is not found."
+
+  eval local from_base="\$RPMBUILD_BOT_UPLOAD_${from_repo}_DIR"
+  eval local to_base="\$RPMBUILD_BOT_UPLOAD_${to_repo}_DIR"
+
+  local files=
+  read_file_list "$ver_list" files '
+local dir=
+local base="$from_base"; repo_dir_for_file "$file" dir; file="${dir}/${file##*/}"
+base="$to_base"; repo_dir_for_file "$file" dir; file_post=">${dir}"
+'
+  for f in $files; do
+    local from="${f%%>*}"
+    local to="${f#*>}"
+    echo "Moving $from to $to/..."
+    run mv "$from" "$to/"
+  done
+}
+
 remove_cmd()
 {
   # Check settings.
@@ -550,10 +613,10 @@ remove_cmd()
 
   check_dir_var "RPMBUILD_BOT_UPLOAD_${repo}_DIR"
 
-  eval local base="\$RPMBUILD_BOT_UPLOAD_${repo}_DIR"
-
   local ver_list="$log_dir/archive/$spec_name.$spec_ver.list"
   [ -f "$ver_list" ] || die "File '$ver_list' is not found."
+
+  eval local base="\$RPMBUILD_BOT_UPLOAD_${repo}_DIR"
 
   local files=
   read_file_list "$ver_list" files 'local dir=; repo_dir_for_file $file dir; file="${dir}/${file##*/}"'
@@ -612,7 +675,7 @@ spec_ver="${spec#*=}"
 spec="${spec%=*}"
 [ "$spec" = "$spec_ver" ] && spec_ver=
 
-command_name="${command%=*}"
+command_name="${command%%=*}"
 command_arg="${command#*=}"
 [ "$command_name" = "$command_arg" ] && command_arg=
 
@@ -623,7 +686,7 @@ case "$command_name" in
   build|test)
     need_spec_file=1
     ;;
-  upload|clean|remove)
+  upload|clean|move|remove)
     ;;
   *) usage
     ;;
@@ -660,12 +723,6 @@ run mkdir -p "$log_dir"
 run mkdir -p "$log_dir/archive"
 run mkdir -p "$log_dir/test"
 run mkdir -p "$zip_dir"
-
-[ -z "$command" ] && command="build"
-
-command_name="${command%=*}"
-comand_arg="${command#*=}"
-[ "$command_name" = "$command_arg" ] && command_arg=
 
 log_base="$log_dir/$spec_name"
 spec_list="$log_base.list"
