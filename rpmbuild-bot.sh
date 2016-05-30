@@ -185,6 +185,36 @@
 # Helpers.
 #
 
+print_elapsed()
+{
+  # $1 = start timestamp, in seconds (as returned by `date +%s`)
+  # $2 = string containg \$e (will be replaced with the elapsed time)
+
+  [ -z "$1" -o -z "$2" ] && return
+
+  local e=$(($(date +%s) - $1))
+  local e_min=$(($e / 60))
+  local e_sec=$(($e % 60))
+  local e_hrs=$((e_min / 60))
+  e_min=$((e_min % 60))
+  e="${e_hrs}h ${e_min}m ${e_sec}s"
+
+  eval "echo \"$2\""
+}
+
+quit()
+{
+  if [ -n "$start_time" ] ; then
+    echo "Build ended on $(date -R)."
+    if [ $1 = 0 ] ; then
+      print_elapsed start_time "Build succeeded (took \$e)."
+    else
+      print_elapsed start_time "Build failed (took \$e)."
+    fi
+  fi
+  exit $1
+}
+
 run()
 {
   "$@"
@@ -192,7 +222,7 @@ run()
   if test $rc != 0 ; then
     echo "ERROR: The following command failed with error code $rc:"
     echo $@
-    exit $rc
+    quit $rc
   fi
 }
 
@@ -208,9 +238,10 @@ log_run()
     echo $@
     echo "You will find more information in file '$log'."
     echo "Here are the last 10 lines of output:"
-    echo ""
+    echo "------------------------------------------------------------------------------"
     tail "$log" -n 10
-    exit $rc
+    echo "------------------------------------------------------------------------------"
+    quit $rc
   fi
 }
 
@@ -222,7 +253,7 @@ warn()
 die()
 {
   echo "ERROR: $1"
-  exit 1
+  quit 1
 }
 
 check_dir_var()
@@ -253,7 +284,7 @@ read_file_list()
     [ "$file" = "$ts" ] && die "Line '$l' in '$list' does not contain timestamps."
     [ -n "$3" ] && eval $3
     [ -f "$file" ] || die "File '$file' is not found."
-    echo "Checking tmestamp of $file..."
+    echo "Checking timestamp of $file..."
     local act_ts=`stat -c '%Y' "$file"`
     if [ "$ts" != "$act_ts" ] ; then
       die "Recorded timestamp $ts doesn't match actual timestamp $act_ts for '$file'."
@@ -268,7 +299,7 @@ usage()
 {
   echo "Usage:"
   sed -n -e "s/rpmbuild-bot.sh/${0##*/}/g" -e 's/^# > /  /p' < "$0"
-  exit 255
+  quit 255
 }
 
 sync_aux_src()
@@ -327,15 +358,21 @@ force their removal if you are sure they should be discarded."
     rm -f "$log_base".*.log "$log_base".*.list "$log_base".list
   fi
 
+  local start_time=
+
   # Generate RPMs.
   for arch in $RPMBUILD_BOT_ARCH_LIST ; do
     echo "Creating RPMs for '$arch' target (logging to $log_base.$arch.log)..."
+    start_time=$(date +%s)
     log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
+    print_elapsed start_time "Completed in \$e."
   done
 
   # Generate SRPM.
   echo "Creating SRPM (logging to $log_base.srpm.log)..."
+  start_time=$(date +%s)
   log_run "$log_base.srpm.log" rpmbuild -bs "$spec_full"
+  print_elapsed start_time "Completed in \$e."
 
   # Find SRPM file name in the log.
   local src_rpm=`grep "^Wrote: \+.*\.src\.rpm$" "$log_base.srpm.log" | sed -e "s#^Wrote: \+##g"`
@@ -359,6 +396,7 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
 
   # Generate ZIP.
   echo "Creating ZIP (logging to $log_base.zip.log)..."
+  start_time=$(date +%s)
   create_zip()
   {(
     run cd "$zip_dir"
@@ -373,6 +411,7 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
     run zip -mry9 "$zip" "@unixroot"
   )}
   log_run "$log_base.zip.log" create_zip
+  print_elapsed start_time "Completed in \$e."
 
   local ver_list="$log_base.$ver_full.list"
 
@@ -729,6 +768,9 @@ run mkdir -p "$zip_dir"
 log_base="$log_dir/$spec_name"
 spec_list="$log_base.list"
 
+start_time=$(date +%s)
+
+echo "Build started on $(date -R)."
 echo "Package:   $spec_name"
 echo "Command:   $command $options"
 
@@ -740,6 +782,4 @@ test -n "$RPMBUILD_BOT_ARCH_LIST" || die "RPMBUILD_BOT_ARCH_LIST is empty."
 
 run eval "${command_name}_cmd"
 
-echo "All done."
-
-exit 0
+quit 0
