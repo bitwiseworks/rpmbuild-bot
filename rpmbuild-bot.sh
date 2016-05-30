@@ -200,6 +200,7 @@ log_run()
 {
   log="$1"
   shift
+  rm -f "$log"
   "$@" >"$log" 2>&1
   local rc=$?
   if test $rc != 0 ; then
@@ -377,6 +378,7 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
 
   # Generate list of all generated packages for further reference.
   echo "Creating list file ($ver_list)..."
+  rm -f "$ver_list"
   echo `stat -c '%Y' "$src_rpm"`"|$src_rpm" > "$ver_list"
   echo `stat -c '%Y' "$zip"`"|$zip" >> "$ver_list"
   # Save base arch RPMs.
