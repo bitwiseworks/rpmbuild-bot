@@ -286,6 +286,9 @@ read_file_list()
     [ -f "$file" ] || die "File '$file' is not found."
     echo "Checking timestamp of $file..."
     local act_ts=`stat -c '%Y' "$file"`
+    # Drop fractional part of seconds reported by older coreutils
+    ts="${ts%%.*}"
+    act_ts="${act_ts%%.*}"
     if [ "$ts" != "$act_ts" ] ; then
       die "Recorded timestamp $ts doesn't match actual timestamp $act_ts for '$file'."
     fi
