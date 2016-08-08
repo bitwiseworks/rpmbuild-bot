@@ -332,10 +332,13 @@ sync_aux_src()
 
 build_cmd()
 {
-  local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
+  eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name}}"
+  [ -z "$arch_list" ] && arch_list="${RPMBUILD_BOT_ARCH_LIST}"
+
+  local base_arch="${arch_list##* }"
 
   echo "Spec file: $spec_full"
-  echo "Targets:   $RPMBUILD_BOT_ARCH_LIST + SRPM + ZIP ($base_arch)"
+  echo "Targets:   $arch_list + SRPM + ZIP ($base_arch)"
 
   sync_aux_src
 
@@ -364,7 +367,7 @@ force their removal if you are sure they should be discarded."
   local start_time=
 
   # Generate RPMs.
-  for arch in $RPMBUILD_BOT_ARCH_LIST ; do
+  for arch in $arch_list ; do
     echo "Creating RPMs for '$arch' target (logging to $log_base.$arch.log)..."
     start_time=$(date +%s)
     log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
@@ -428,7 +431,7 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
     echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
   done
   # Save other arch RPMs.
-  for arch in ${RPMBUILD_BOT_ARCH_LIST%${base_arch}} ; do
+  for arch in ${arch_list%${base_arch}} ; do
     rpms="`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
     [ -n "$rpms" ] || die "Cannot find .$arch.rpm file names in '$log_base.arch.log'."
     for f in $rpms ; do

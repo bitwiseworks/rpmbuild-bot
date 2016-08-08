@@ -58,6 +58,9 @@ export LDFLAGS=
 # package and for local test builds).
 RPMBUILD_BOT_ARCH_LIST="pentium4 i686"
 
+# Overrides of RPM arch list for specific packages.
+RPMBUILD_BOT_ARCH_LIST_libc="i686" # Binary build -> no other archs.
+
 # Basic RPM repository layout for this distribution channel.
 RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm="\$base/i386/\$arch"
 RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_srpm="\$base/i386/SRPMS"
