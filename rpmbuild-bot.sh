@@ -332,7 +332,8 @@ sync_aux_src()
 
 build_cmd()
 {
-  eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name}}"
+  local spec_name_=`echo "${spec_name}" | tr - _`
+  eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name_}}"
   [ -z "$arch_list" ] && arch_list="${RPMBUILD_BOT_ARCH_LIST}"
 
   local base_arch="${arch_list##* }"

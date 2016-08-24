@@ -59,6 +59,9 @@ export LDFLAGS=
 RPMBUILD_BOT_ARCH_LIST="pentium4 i686"
 
 # Overrides of RPM arch list for specific packages.
+# Note that dash symbols in package names should be replaced with underscores
+# in the variables below (e.g. use RPMBUILD_BOT_ARCH_LIST_foo_bar for the
+# foo-bar package).
 RPMBUILD_BOT_ARCH_LIST_libc="i686" # Binary build -> no other archs.
 
 # Basic RPM repository layout for this distribution channel.
