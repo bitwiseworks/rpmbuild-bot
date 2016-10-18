@@ -365,14 +365,23 @@ force their removal if you are sure they should be discarded."
     rm -f "$log_base".*.log "$log_base".*.list "$log_base".list
   fi
 
+  local noarch_only=
   local start_time=
 
-  # Generate RPMs.
-  for arch in $arch_list ; do
+  # Generate RPMs (note that base_arch always goes first).
+  for arch in $base_arch ${arch_list%${base_arch}} ; do
     echo "Creating RPMs for '$arch' target (logging to $log_base.$arch.log)..."
     start_time=$(date +%s)
     log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
     print_elapsed start_time "Completed in \$e."
+    if ! grep -q "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" ; then
+      if ! grep -q "^Wrote: \+.*\.noarch\.rpm$" "$log_base.$arch.log" ; then
+        die "Target '$arch' did not produce any RPMs."
+      fi
+      noarch_only=1
+      echo "Skipping other targets because '$arch' produced only 'noarch' RPMs."
+      break
+    fi
   done
 
   # Generate SRPM.
@@ -431,14 +440,16 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
   for f in $rpms ; do
     echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
   done
-  # Save other arch RPMs.
-  for arch in ${arch_list%${base_arch}} ; do
-    rpms="`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
-    [ -n "$rpms" ] || die "Cannot find .$arch.rpm file names in '$log_base.arch.log'."
-    for f in $rpms ; do
-      echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
+  # Save other arch RPMs (only if there is anything but noarch).
+  if [ -z "$noarch_only" ] ; then
+    for arch in ${arch_list%${base_arch}} ; do
+      rpms="`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
+      [ -n "$rpms" ] || die "Cannot find .$arch.rpm file names in '$log_base.arch.log'."
+      for f in $rpms ; do
+        echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
+      done
     done
-  done
+  fi
 
   # Everything succeeded. Symlink the list file so that "upload" can find it.
   run ln -s "${ver_list##*/}" "$log_base.list"
