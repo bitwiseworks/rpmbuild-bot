@@ -112,6 +112,17 @@
 # repositories. When REPO is not given, the default repository is used
 # (usually experimental or similar).
 #
+# The upload command also requires the spec file to be under SVN vesrion control
+# and will try to commit it before uploading the RPMs to the repository with the
+# automatic commit message that says "spec: PROJECT: Release version VERSION."
+# (where PROJECT is the spec file name and VERSION is the full version,
+# excluding the distribution mark, as specified by the spec file). If the commit
+# operation fails, uploading will be aborted. This to ensure that the spec file
+# are published at the same time the RPMs are published - to guarantee their
+# consisnency and simplify further maintenance. Note that the auxiliary source
+# directory named SPEC and located near the spec file (see the "build" command),
+# if it exists, will also be committed.
+#
 # Note that the "upload" command needs log files from the "build" command
 # and will fail otherwise.
 #
@@ -554,6 +565,49 @@ upload_cmd()
 "File '$spec_list' is not found.
 You may need to build the packages using the 'build' command."
 
+  # Prepare for committing the SPEC and auxiliary source files.
+  local ver_list=
+  [ -L "$spec_list" ] && ver_list=`readlink "$spec_list"`
+  [ -z "$ver_list" ] && die "File '$spec_list' is not a valid symbolic link."
+
+  local ver_full="${ver_list#${spec_name}.}"
+  ver_full="${ver_full%.*}"
+  [ -n "$dist_mark" ] && ver_full="${ver_full%${dist_mark}}"
+
+  [ -n "$ver_full" ] || die "Full version string is empty."
+
+  local commit_items="$spec_full"
+  # Commit the auxiliary source directory, if any, as well.
+  [ -d "${spec_full%.spec}" ] && commit_items="$commit_items ${spec_full%.spec}"
+
+  local commit_msg="spec: $spec_name: Release version $ver_full."
+
+  echo \
+"Uploading requires the following items to be committed to SPEC repository:
+  $commit_items
+With the following commit message:
+  $commit_msg
+You will now be presented a diff for careful inspection. Type YES to continue."
+
+  local answer=
+  read answer
+  if [ "$answer" = "YES" ] ; then
+    local pager=`which less`
+    if [ ! -x "$pager" ] ; then
+      pager="more"
+      # OS/2 more doesn't understand LF, feed it through sed.
+      [ -x `which sed` ] && pager="sed -e '' | $pager"
+    fi
+    echo
+    svn diff "$commit_items" | "$pager"
+    echo "
+Type YES if the diff is okay to be committed."
+    read answer
+  fi
+
+  [ "$answer" = "YES" ] || die "Your answer is not YES, upload is aborted."
+
+  # First, copy RPM files over to the repository.
   local files=
   read_file_list "$spec_list" files
   for f in $files; do
@@ -574,6 +628,9 @@ packages in the repository should be discarded."
     echo "Removing $f..."
     run rm -f "$f"
   done
+
+  # And finally commit the SPEC file.
+  run svn commit "$commit_items" -m "$commit_msg"
 
   # Note: versioned .list file will remain in archive forever (for further reference).
   echo "Removing old '$spec_name' logs from $log_dir/archive..."
@@ -752,7 +809,7 @@ case "$command_name" in
 esac
 
 # Query all rpmbuild macros in a single run as it may be slow.
-eval `rpmbuild.exe --eval='rpmbuild_dir="%_topdir" ; spec_dir="%_specdir" ; src_dir="%_sourcedir"' | tr '\\\' /`
+eval `rpmbuild.exe --eval='rpmbuild_dir="%_topdir" ; spec_dir="%_specdir" ; src_dir="%_sourcedir" ; dist_mark="%dist"' | tr '\\\' /`
 
 [ -n "$rpmbuild_dir" -a -d "$rpmbuild_dir" ] || die "Falied to get %_topdir from rpmbuild or not directory ($rpmbuild_dir)."
 [ -n "$spec_dir" -a -d "$spec_dir" ] || die "Falied to get %_specdir from rpmbuild or not directory ($spec_dir)."
