@@ -63,6 +63,7 @@ RPMBUILD_BOT_ARCH_LIST="pentium4 i686"
 # in the variables below (e.g. use RPMBUILD_BOT_ARCH_LIST_foo_bar for the
 # foo-bar package).
 RPMBUILD_BOT_ARCH_LIST_libc="i686" # Binary build -> no other archs.
+RPMBUILD_BOT_ARCH_LIST_kLIBCum="i686" # Binary build -> no other archs.
 
 # Basic RPM repository layout for this distribution channel.
 RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm="\$base/i386/\$arch"
