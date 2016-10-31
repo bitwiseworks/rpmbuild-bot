@@ -601,7 +601,7 @@ inspection. Type YES to continue."
     fi
     run svn up "$spec_dir"
     echo
-    svn diff "$commit_items" | "$pager"
+    svn diff $commit_items | "$pager"
     echo "
 Type YES if the diff is okay to be committed."
     read answer
@@ -632,7 +632,7 @@ packages in the repository should be discarded."
   done
 
   # And finally commit the SPEC file.
-  run svn commit "$commit_items" -m "$commit_msg"
+  run svn commit $commit_items -m "$commit_msg"
 
   # Note: versioned .list file will remain in archive forever (for further reference).
   echo "Removing old '$spec_name' logs from $log_dir/archive..."
