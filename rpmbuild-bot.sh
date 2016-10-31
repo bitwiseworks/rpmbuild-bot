@@ -587,7 +587,8 @@ You may need to build the packages using the 'build' command."
   $commit_items
 With the following commit message:
   $commit_msg
-You will now be presented a diff for careful inspection. Type YES to continue."
+The repository will be updated now and then you will get a diff for careful
+inspection. Type YES to continue."
 
   local answer=
   read answer
@@ -598,6 +599,7 @@ You will now be presented a diff for careful inspection. Type YES to continue."
       # OS/2 more doesn't understand LF, feed it through sed.
       [ -x `which sed` ] && pager="sed -e '' | $pager"
     fi
+    run svn up "$spec_dir"
     echo
     svn diff "$commit_items" | "$pager"
     echo "
