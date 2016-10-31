@@ -16,7 +16,7 @@
 # different machines. It uses a separate file rpmbuild-bot-env.sh located
 # in the same directory to set up the environment and control the build
 # process. The main purpose of this script is to build RPM packages for a
-# specific distribution channel maintaining distribution-siecific rules.
+# specific distribution channel maintaining distribution-specific rules.
 #
 # Usage
 # -----
@@ -29,7 +29,7 @@
 # MYAPP is the name of the RPM package spec file (extension is optional,
 # .spec is assumed). The spec file is searched in the SPECS directory of the
 # rpmbuild tree (usually $USER/rpmbuild/SPECS, rpmbuild --eval='%_specdir'
-# will show the exact location). This may be overriden by giving a spec file
+# will show the exact location). This may be overridden by giving a spec file
 # with a path specification.
 #
 # The second argument defines the command to perform. The default command is
@@ -53,7 +53,7 @@
 # of the source RPM and ZIP files is also logged, into separate log files.
 #
 # The "build" command will fail if the log directory contains files from a
-# successfull run of another "build" command for this package. This is to
+# successful run of another "build" command for this package. This is to
 # prevent overwriting successfully built packages that are not yet uploaded to
 # the distribution repository (see the "upload" command). You should either
 # run the "upload" command or use the -f option to force removal of these
@@ -64,7 +64,7 @@
 # same directory where the given .spec file resides. If such a directory
 # exists, all files in it are assumed to be auxiliary source files used by the
 # .spec file via SourceN: directives. These files will be automatically copied
-# to the SOURCES directory in the rpmbuild tree befure starting the build
+# to the SOURCES directory in the rpmbuild tree before starting the build
 # process.
 #
 # Doing test builds
@@ -84,9 +84,9 @@
 # parameter to the "test" command which may take one of the following values:
 #
 #   prep    Execute the %prep section of the spec file only.
-#   build   Execute the %build section only (requres %prep to be executed
+#   build   Execute the %build section only (requires %prep to be executed
 #           before). May be run multiple times.
-#   install Execute the %install sectuion only (requires "prep" and "build"
+#   install Execute the %install section only (requires "prep" and "build"
 #           to be executed before). May be run multiple times.
 #   pack    Create the RPM packages (requires "prep", "build" and "install"
 #           to be executed before). Note that this step will also execute
@@ -112,16 +112,16 @@
 # repositories. When REPO is not given, the default repository is used
 # (usually experimental or similar).
 #
-# The upload command also requires the spec file to be under SVN vesrion control
-# and will try to commit it before uploading the RPMs to the repository with the
+# The upload command also requires the spec file to be under SVN version control
+# and will try to commit it after uploading the RPMs to the repository with the
 # automatic commit message that says "spec: PROJECT: Release version VERSION."
 # (where PROJECT is the spec file name and VERSION is the full version,
-# excluding the distribution mark, as specified by the spec file). If the commit
-# operation fails, uploading will be aborted. This to ensure that the spec file
-# are published at the same time the RPMs are published - to guarantee their
-# consisnency and simplify further maintenance. Note that the auxiliary source
-# directory named SPEC and located near the spec file (see the "build" command),
-# if it exists, will also be committed.
+# excluding the distribution mark, as specified by the spec file).This to ensure
+# that the spec file is published at the same time the RPMs are published - to
+# guarantee their consistency and simplify further maintenance. Note that the
+# auxiliary source directory named SPEC and located near the spec file (see the
+# "build" command), if it exists, will also be committed. If the spec file is
+# not under version control, the "upload" command will fail.
 #
 # Note that the "upload" command needs log files from the "build" command
 # and will fail otherwise.
@@ -182,7 +182,7 @@
 # specify a repository to remove the packages from).
 #
 # Note that the log files from the "build" and "upload" commands are also
-# removed by this command upon sucessful package removal.
+# removed by this command upon successful package removal.
 #
 # Return value
 # ------------
