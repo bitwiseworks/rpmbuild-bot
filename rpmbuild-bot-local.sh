@@ -18,4 +18,4 @@
 #
 
 # Local netdrive directory that maps to rpm.netlabs.org over WEBDAV.
-RPM_NETLABS_ORG_DIR="Y:/webdav/rpm"
+RPM_NETLABS_ORG_DIR="Y:/webdav/rpm.netlabs.org"
