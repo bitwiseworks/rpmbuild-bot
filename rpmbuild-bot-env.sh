@@ -65,6 +65,17 @@ RPMBUILD_BOT_ARCH_LIST="pentium4 i686"
 RPMBUILD_BOT_ARCH_LIST_libc="i686" # Binary build -> no other archs.
 RPMBUILD_BOT_ARCH_LIST_kLIBCum="i686" # Binary build -> no other archs.
 
+# Legacy DLLs for specific packages. Each RPM from the list (format is
+# "ABI|NAME|VERSION-RELEASE|[FILEMASK]|[ARCH]") for each target platform is
+# downloaded from a repository specified in RPMBUILD_BOT_UPLOAD_REPO_STABLE
+# and scanned for FILEMASK files (*.dll by default). These files are then
+# extracted to a directory called RPM_SOURCE_DIR/PACKAGE-legacy (preserving the
+# original directory tree) and, if PACKAGE.spec contains a macro named
+# %legacy_runtime_packages, they are later placed to a sub-package called
+# `legacy-ABI` when rpmbuild is run. If ARCH is specified, this platform's
+# legacy package will be used for all target platforms.
+RPMBUILD_BOT_LEGACY_libvpx="2|libvpx|1.4.0-2"
+
 # Basic RPM repository layout for this distribution channel.
 RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm="\$base/i386/\$arch"
 RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_srpm="\$base/i386/SRPMS"
@@ -72,6 +83,9 @@ RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_zip="\$base/zip"
 
 # List of repositories for "upload" command (the first one is the default).
 RPMBUILD_BOT_UPLOAD_REPO_LIST="exp rel"
+
+# Name of the stable repository (must be present in the above list).
+RPMBUILD_BOT_UPLOAD_REPO_STABLE="rel"
 
 # Sanity checks.
 check_dir_var "RPM_NETLABS_ORG_DIR"

@@ -341,6 +341,84 @@ sync_aux_src()
   done
 }
 
+get_legacy_runtime()
+{
+  [ -n "$src_dir" ] || die "src_dir is empty."
+  [ -n "$RPMBUILD_BOT_UPLOAD_REPO_STABLE" ] || die "RPMBUILD_BOT_UPLOAD_REPO_STABLE is empty."
+
+  local spec_name_=`echo "${spec_name}" | tr - _`
+  eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name_}}"
+  [ -z "$arch_list" ] && arch_list="${RPMBUILD_BOT_ARCH_LIST}"
+
+  eval local rpm_list="\${RPMBUILD_BOT_LEGACY_${spec_name_}}"
+  [ -z "$rpm_list" ] && return # nothing to do
+
+  eval local base="\$RPMBUILD_BOT_UPLOAD_${RPMBUILD_BOT_UPLOAD_REPO_STABLE}_DIR"
+
+  local abi_list=
+
+  for rpm_spec in "$rpm_list" ; do
+    local abi name ver mask legacy_arch
+    IFS='|' read abi name ver mask legacy_arch <<EOF
+${rpm_spec}
+EOF
+    [ -z "$abi" -o -z "$name" -o -z "$ver" ] && die "Value '${rpm_spec}' in RPMBUILD_BOT_LEGACY_${spec_name_} is invalid."
+    [ -z "$mask" ] && mask="*.dll"
+
+    abi_list="$abi_list${abi_list:+ }$abi"
+
+    # Enumerate RPMs for all archs and extract them
+    echo "Getting legacy runtime ($mask) for ABI '$abi'..."
+    for arch in ${legacy_arch:-${arch_list}} ; do
+      eval local rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-$ver$dist_mark.$arch.rpm"
+      local tgt_dir="$src_dir/$spec_name-legacy/$abi/$arch"
+      # Check filenames and timestamps
+      echo "Checking package $rpm..."
+      [ -f "$rpm" ] || die "File '$rpm' is not found."
+      local old_ts old_rpm old_name old_ver
+      [ -f "$tgt_dir.list" ] && IFS='|' read old_ts old_rpm old_name old_ver < "$tgt_dir.list"
+      local ts=`stat -c '%Y' "$rpm"`
+      # Drop fractional part of seconds reported by older coreutils
+      ts="${ts%%.*}"
+      old_ts="${old_ts%%.*}"
+      if [ "$old_rpm" != "$rpm" -o "$ts" != "$old_ts" -o "$name" != "$old_name" -o "$ver" != "$old_ver" ] ; then
+        echo "Extracting to $tgt_dir..."
+        run rm -f "$tgt_dir.list" && rm -rf "$tgt_dir"
+        (run mkdir -p "$tgt_dir" && cd "$tgt_dir"; run rpm2cpio "$rpm" | eval cpio -idm $mask)
+        # save the list for later use
+        find "$tgt_dir" -type f -printf '/%P\n' > "$tgt_dir.files.list"
+        # now try to locate the debuginfo package and extract *.dbg from it
+        eval local debug_rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-debuginfo-$ver$dist_mark.$arch.rpm"
+        [ ! -f "$debug_rpm" ] && eval debug_rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-debug-$ver$dist_mark.$arch.rpm"
+        if [ -f "$debug_rpm" ] ; then
+          echo "Found debug info package $debug_rpm, extracting..."
+          local dbgfilelist="$tgt_dir.debugfiles.list"
+          run rm -rf "$dbgfilelist"
+          local masks=
+          local f
+          while read -r f ; do
+            f="${f%.*}.dbg"
+            masks="$masks${masks:+ }'*$f'"
+            # Save the file for later inclusion into debugfiles.list (%debug_package magic in brp-strip.os2)
+            run echo "$f" >> "$dbgfilelist"
+          done < "$tgt_dir.files.list"
+          (run cd "$tgt_dir"; run rpm2cpio "$debug_rpm" | eval cpio -idm $masks)
+        fi
+        # put the 'done' mark
+        run echo "$ts|$rpm|$name|$ver" > "$tgt_dir.list"
+      fi
+    done
+  done
+
+  run echo "$abi_list" > "$src_dir/$spec_name-legacy/abi.list"
+}
+
+build_prepare()
+{
+  sync_aux_src
+  get_legacy_runtime
+}
+
 build_cmd()
 {
   local spec_name_=`echo "${spec_name}" | tr - _`
@@ -352,7 +430,7 @@ build_cmd()
   echo "Spec file: $spec_full"
   echo "Targets:   $arch_list + SRPM + ZIP ($base_arch)"
 
-  sync_aux_src
+  build_prepare
 
   if [ -f "$spec_list" ] ; then
     if [ -z "$force" ] ; then
@@ -470,8 +548,6 @@ test_cmd()
 {
   echo "Spec file: $spec_full"
 
-  sync_aux_src
-
   local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
   local cmds=
 
@@ -479,6 +555,7 @@ test_cmd()
 
   case "$command_arg" in
     all)
+      build_prepare
       cmds="$cmds -bb"
       ;;
     prep)
