@@ -1,6 +1,20 @@
 History of changes
 ------------------
 
+1.2.0 [xx.10.2016]
+  - Add move command to move packages between repositories.
+  - Remove log files before creating them (needed for recovering after some
+    failures).
+  - Print elapsed time after each succeded step and overall.
+  - Support stat timestamps w/o fractional part (new coreutils).
+  - Support per-package ARCH specification in -env.sh (useful for e.g.
+    binary-only RPMs that provide only one architecture, like libc).
+  - Run rpmbuild only once for noarch-only SPEC files (this also fixes a
+    regression when building such files with previous rpmbuild-bot versions).
+  - Automatically commit SPEC files to SVN on upload to ensure integrity
+    and consistency between published RPMs and their SPECs.
+  - Add support for automatic generation of legacy runtime sub-packages.
+
 1.1.0 [15.04.2016]
 
   - Disallow different .spec and main package names.

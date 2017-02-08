@@ -365,12 +365,15 @@ EOF
     [ -z "$abi" -o -z "$name" -o -z "$ver" ] && die "Value '${rpm_spec}' in RPMBUILD_BOT_LEGACY_${spec_name_} is invalid."
     [ -z "$mask" ] && mask="*.dll"
 
+    # add the dist suffix, if any, to ver (to make it consistent)
+    ver="$ver$dist_mark"
+
     abi_list="$abi_list${abi_list:+ }$abi"
 
     # Enumerate RPMs for all archs and extract them
     echo "Getting legacy runtime ($mask) for ABI '$abi'..."
     for arch in ${legacy_arch:-${arch_list}} ; do
-      eval local rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-$ver$dist_mark.$arch.rpm"
+      eval local rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-$ver.$arch.rpm"
       local tgt_dir="$src_dir/$spec_name-legacy/$abi/$arch"
       # Check filenames and timestamps
       echo "Checking package $rpm..."
@@ -388,8 +391,8 @@ EOF
         # save the list for later use
         find "$tgt_dir" -type f -printf '/%P\n' > "$tgt_dir.files.list"
         # now try to locate the debuginfo package and extract *.dbg from it
-        eval local debug_rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-debuginfo-$ver$dist_mark.$arch.rpm"
-        [ ! -f "$debug_rpm" ] && eval debug_rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-debug-$ver$dist_mark.$arch.rpm"
+        eval local debug_rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-debuginfo-$ver.$arch.rpm"
+        [ ! -f "$debug_rpm" ] && eval debug_rpm="$RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm/$name-debug-$ver.$arch.rpm"
         if [ -f "$debug_rpm" ] ; then
           echo "Found debug info package $debug_rpm, extracting..."
           local dbgfilelist="$tgt_dir.debugfiles.list"
