@@ -668,24 +668,22 @@ You may need to build the packages using the 'build' command."
 With the following commit message:
   $commit_msg
 The repository will be updated now and then you will get a diff for careful
-inspection. Type YES to continue."
+inspection. Press Enter to continue."
 
   local answer=
   read answer
-  if [ "$answer" = "YES" ] ; then
-    local pager=`which less`
-    if [ ! -x "$pager" ] ; then
-      pager="more"
-      # OS/2 more doesn't understand LF, feed it through sed.
-      [ -x `which sed` ] && pager="sed -e '' | $pager"
-    fi
-    run svn up "$spec_dir"
-    echo
-    svn diff $commit_items | "$pager"
-    echo "
-Type YES if the diff is okay to be committed."
-    read answer
+  local pager=`which less`
+  if [ ! -x "$pager" ] ; then
+    pager="more"
+    # OS/2 more doesn't understand LF, feed it through sed.
+    [ -x `which sed` ] && pager="sed -e '' | $pager"
   fi
+  run svn up "$spec_dir"
+  echo
+  svn diff $commit_items | "$pager"
+  echo "
+Type YES if the diff is okay to be committed."
+  read answer
 
   [ "$answer" = "YES" ] || die "Your answer is not YES, upload is aborted."
 
