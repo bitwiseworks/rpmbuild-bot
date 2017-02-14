@@ -350,14 +350,14 @@ get_legacy_runtime()
   eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name_}}"
   [ -z "$arch_list" ] && arch_list="${RPMBUILD_BOT_ARCH_LIST}"
 
-  eval local rpm_list="\${RPMBUILD_BOT_LEGACY_${spec_name_}}"
+  eval local rpm_list=\"\${RPMBUILD_BOT_LEGACY_${spec_name_}}\"
   [ -z "$rpm_list" ] && return # nothing to do
 
   eval local base="\$RPMBUILD_BOT_UPLOAD_${RPMBUILD_BOT_UPLOAD_REPO_STABLE}_DIR"
 
   local abi_list=
 
-  for rpm_spec in "$rpm_list" ; do
+  for rpm_spec in $rpm_list ; do
     local abi name ver mask legacy_arch
     IFS='|' read abi name ver mask legacy_arch <<EOF
 ${rpm_spec}
@@ -509,7 +509,6 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
   {(
     run cd "$zip_dir"
     rm -r "@unixroot" 2> /dev/null
-    # Note no quoters around $rpms - it's to split at EOL.
     for f in $rpms ; do
       echo "Unpacking $f..."
       run rpm2cpio "$f" | cpio -idm
