@@ -355,9 +355,7 @@ get_legacy_runtime()
 
   eval local base="\$RPMBUILD_BOT_UPLOAD_${RPMBUILD_BOT_UPLOAD_REPO_STABLE}_DIR"
 
-  local abi_list="$src_dir/$spec_name-legacy/abi.list"
-  run rm -f "$abi_list" "$abi_list.tmp"
-  run mkdir -p "${abi_list%/*}"
+  local abi_list=
 
   for rpm_spec in $rpm_list ; do
     local abi name ver mask legacy_arch
@@ -370,7 +368,7 @@ EOF
     # add the dist suffix, if any, to ver (to make it consistent)
     ver="$ver$dist_mark"
 
-    run echo "$abi" >> "$abi_list.tmp"
+    abi_list="$abi_list${abi_list:+ }$abi"
 
     # Enumerate RPMs for all archs and extract them
     echo "Getting legacy runtime ($mask) for ABI '$abi'..."
@@ -415,8 +413,7 @@ EOF
     done
   done
 
-  # put the global 'done' mark
-  run mv "$abi_list.tmp" "$abi_list"
+  run echo "$abi_list" > "$src_dir/$spec_name-legacy/abi.list"
 }
 
 build_prepare()
