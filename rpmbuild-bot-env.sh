@@ -64,6 +64,7 @@ RPMBUILD_BOT_ARCH_LIST="pentium4 i686"
 # foo-bar package).
 RPMBUILD_BOT_ARCH_LIST_libc="i686" # Binary build -> no other archs.
 RPMBUILD_BOT_ARCH_LIST_kLIBCum="i686" # Binary build -> no other archs.
+RPMBUILD_BOT_ARCH_LIST_klusrmgr="i686" # Binary build -> no other archs.
 
 # Legacy DLLs for specific packages. Each RPM from the list (format is
 # "ABI|NAME|VERSION-RELEASE|[FILEMASK]|[ARCH]") for each target platform is
@@ -75,6 +76,9 @@ RPMBUILD_BOT_ARCH_LIST_kLIBCum="i686" # Binary build -> no other archs.
 # `legacy-ABI` when rpmbuild is run. If ARCH is specified, this platform's
 # legacy package will be used for all target platforms.
 RPMBUILD_BOT_LEGACY_libvpx="2|libvpx|1.4.0-2"
+RPMBUILD_BOT_LEGACY_libtiff="4|libtiff-legacy|3.9.5-2"
+RPMBUILD_BOT_LEGACY_xz="4|liblzma0|4.999.9beta-5"
+RPMBUILD_BOT_LEGACY_poppler="63|poppler|0.47.0-1|*63.dll 65|poppler|0.49.0-2|*65.dll"
 
 # Basic RPM repository layout for this distribution channel.
 RPMBUILD_BOT_UPLOAD_REPO_LAYOUT_rpm="\$base/i386/\$arch"
