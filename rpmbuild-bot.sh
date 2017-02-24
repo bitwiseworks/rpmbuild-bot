@@ -887,12 +887,25 @@ case "$command_name" in
     ;;
 esac
 
+# Set up the rpmbuild-bot environment.
+. "${0%%.sh}-env.sh"
+
+# Check common env settings.
+test -n "$RPMBUILD_BOT_ARCH_LIST" || die "RPMBUILD_BOT_ARCH_LIST is empty."
+
 # Query all rpmbuild macros in a single run as it may be slow.
 eval `rpmbuild.exe --eval='rpmbuild_dir="%_topdir" ; spec_dir="%_specdir" ; src_dir="%_sourcedir" ; dist_mark="%dist"' | tr '\\\' /`
 
 [ -n "$rpmbuild_dir" -a -d "$rpmbuild_dir" ] || die "Falied to get %_topdir from rpmbuild or not directory ($rpmbuild_dir)."
 [ -n "$spec_dir" -a -d "$spec_dir" ] || die "Falied to get %_specdir from rpmbuild or not directory ($spec_dir)."
 [ -n "$src_dir" -a -d "$src_dir" ] || die "Falied to get %_sourcedir from rpmbuild or not directory ($src_dir)."
+[ -n "$dist_mark" -a -d "$src_dir" ] || die "Falied to get %dist from rpmbuild, build command wouldn't differ from test."
+
+# RPMBUILD_BOT_SPEC_DIR overrides %_specdir
+if [ -n "$RPMBUILD_BOT_SPEC_DIR" ] ; then
+  [ -d "$RPMBUILD_BOT_SPEC_DIR" ] || die "RPMBUILD_BOT_SPEC_DIR is not directory ($RPMBUILD_BOT_SPEC_DIR)."
+  spec_dir="$RPMBUILD_BOT_SPEC_DIR"
+fi
 
 log_dir="$rpmbuild_dir/logs"
 zip_dir="$rpmbuild_dir/zip"
@@ -927,12 +940,6 @@ start_time=$(date +%s)
 echo "Build started on $(date -R)."
 echo "Package:   $spec_name"
 echo "Command:   $command $options"
-
-# Set up the rpmbuild-bot environment.
-. "${0%%.sh}-env.sh"
-
-# Check common settings.
-test -n "$RPMBUILD_BOT_ARCH_LIST" || die "RPMBUILD_BOT_ARCH_LIST is empty."
 
 run eval "${command_name}_cmd"
 
