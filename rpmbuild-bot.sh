@@ -466,8 +466,8 @@ force their removal if you are sure they should be discarded."
     start_time=$(date +%s)
     log_run "$log_base.$arch.log" rpmbuild.exe --target=$arch -bb "$spec_full"
     print_elapsed start_time "Completed in \$e."
-    if ! grep -q "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" ; then
-      if ! grep -q "^Wrote: \+.*\.noarch\.rpm$" "$log_base.$arch.log" ; then
+    if ! grep -a -q "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" ; then
+      if ! grep -a -q "^Wrote: \+.*\.noarch\.rpm$" "$log_base.$arch.log" ; then
         die "Target '$arch' did not produce any RPMs."
       fi
       noarch_only=1
@@ -483,7 +483,7 @@ force their removal if you are sure they should be discarded."
   print_elapsed start_time "Completed in \$e."
 
   # Find SRPM file name in the log.
-  local src_rpm=`grep "^Wrote: \+.*\.src\.rpm$" "$log_base.srpm.log" | sed -e "s#^Wrote: \+##g"`
+  local src_rpm=`grep -a "^Wrote: \+.*\.src\.rpm$" "$log_base.srpm.log" | sed -e "s#^Wrote: \+##g"`
   [ -n "$src_rpm" ] || die "Cannot find .src.rpm file name in '$log_base.srpm.log'."
 
   # Find package version.
@@ -496,7 +496,7 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
   [ -n "$ver_full" ] || die "Cannot deduce package version from '$src_rpm'."
 
   # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
-  local rpms="`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_base.$base_arch.log" | sed -e "s#^Wrote: \+##g"`"
+  local rpms="`grep -a "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_base.$base_arch.log" | sed -e "s#^Wrote: \+##g"`"
   [ -n "$rpms" ] || die "Cannot find .$base_arch.rpm/.noarch.rpm file names in '$log_base.base_arch.log'."
 
   local ver_full_zip=`echo $ver_full | tr . _`
@@ -534,7 +534,7 @@ Either rename '$spec_name.spec' to '${ver_full%%-[0-9]*}.spec' or set 'Name:' ta
   # Save other arch RPMs (only if there is anything but noarch).
   if [ -z "$noarch_only" ] ; then
     for arch in ${arch_list%${base_arch}} ; do
-      rpms="`grep "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
+      rpms="`grep -a "^Wrote: \+.*\.$arch\.rpm$" "$log_base.$arch.log" | sed -e "s#^Wrote: \+##g"`"
       [ -n "$rpms" ] || die "Cannot find .$arch.rpm file names in '$log_base.arch.log'."
       for f in $rpms ; do
         echo `stat -c '%Y' "$f"`"|$f" >> "$ver_list"
@@ -590,7 +590,7 @@ test_cmd()
   # Show the generated RPMs when appropriate.
   if [ "$command_arg" = "all" -o "$command_arg" = "pack" ] ; then
     # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
-    local rpms="`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`"
+    local rpms="`grep -a "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`"
     if [ -n "$rpms" ] ; then
       echo "Successfully generated the following RPMs:"
       for f in $rpms; do
@@ -728,7 +728,7 @@ clean_cmd()
     [ -f "$log_file" ] || die "File '$test_log' is not found."
 
     # Find all RPM packages for the base arch (note the quotes around `` - it's to preserve multi-line result).
-    local rpms="`grep "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`"
+    local rpms="`grep -a "^Wrote: \+.*\.\($base_arch\.rpm\|noarch\.rpm\)$" "$log_file" | sed -e "s#^Wrote: \+##g"`"
     if [ -n "$rpms" ] ; then
       for f in $rpms; do
         echo "Removing $f..."
