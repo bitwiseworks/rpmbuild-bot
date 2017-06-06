@@ -21,12 +21,12 @@
 # Usage
 # -----
 #
-# > rpmbuild-bot.sh SPEC[=VERSION]
+# > rpmbuild-bot.sh [-l] SPEC[=VERSION]
 # >                 [ upload[=REPO] | test[=MODE] | clean[=test] |
 # >                   move[=FROM_REPO=TO_REPO] | remove[=REPO] ]
 # >                 [-f]
 #
-# MYAPP is the name of the RPM package spec file (extension is optional,
+# SPEC is the name of the RPM package spec file (extension is optional,
 # .spec is assumed). The spec file is searched in the SPECS directory of the
 # rpmbuild tree (usually $USER/rpmbuild/SPECS, rpmbuild --eval='%_specdir'
 # will show the exact location). This may be overridden by giving a spec file
@@ -34,6 +34,11 @@
 #
 # The second argument defines the command to perform. The default command is
 # "build". The following sections will describe each command.
+#
+# Global options:
+#
+# -l -- Log output of the rpmbuild command to screen in addition to putting it
+#       to a dedicated log file.
 #
 # Building packages
 # -----------------
@@ -237,21 +242,33 @@ run()
   fi
 }
 
+log()
+{
+  echo $@
+}
+
 log_run()
 {
   log="$1"
   shift
   rm -f "$log"
-  "$@" >"$log" 2>&1
+  if [ -n "$log_to_console" ] ; then
+    "$@" 2>&1 | tee "$log"
+  else
+    "$@" >"$log" 2>&1
+  fi
   local rc=$?
-  if test $rc != 0 ; then
-    echo "ERROR: The following command failed with error code $rc:"
-    echo $@
-    echo "You will find more information in file '$log'."
-    echo "Here are the last 10 lines of output:"
-    echo "------------------------------------------------------------------------------"
-    tail "$log" -n 10
-    echo "------------------------------------------------------------------------------"
+  if [ $rc != 0 ] ; then
+    log "ERROR: The following command failed with error code $rc:"
+    log $@
+    log "You will find more information in file '$log'."
+    if [ -z "$log_to_console" ] ; then
+      # Note: echo instead of log to avoid putting this to the main log file.
+      echo "Here are the last 10 lines of the command output:"
+      echo "------------------------------------------------------------------------------"
+      tail "$log" -n 10
+      echo "------------------------------------------------------------------------------"
+    fi
     quit $rc
   fi
 }
@@ -402,7 +419,7 @@ EOF
           while read -r f ; do
             f="${f%.*}.dbg"
             masks="$masks${masks:+ }'*$f'"
-            # Save the file for later inclusion into debugfiles.list (%debug_package magic in brp-strip.os2)
+            # Save the file for later inclusion into debugfiles.list (%debug_package magic in brp-strip-os2)
             run echo "$f" >> "$dbgfilelist"
           done < "$tgt_dir.files.list"
           (run cd "$tgt_dir"; run rpm2cpio "$debug_rpm" | eval cpio -idm $masks)
@@ -840,17 +857,30 @@ remove_cmd()
 while [ -n "$1" ] ; do
   case "$1" in
   -*)
-    options="$*"
-    while [ -n "$1" ] ; do
+    if [ -z "$command" ] ; then
+      # Global options
       case "$1" in
-      -f) force="-f"
+      -l) log_to_console="$1"
         ;;
       *) usage
         ;;
       esac
-      shift
-    done
-    break
+    else
+      # Command's options
+      options="$*"
+      while [ -n "$1" ] ; do
+        case "$1" in
+        -f) force="$1"
+          ;;
+        -l) log_to_console="$1"
+          ;;
+        *) usage
+          ;;
+        esac
+        shift
+      done
+      break
+    fi
     ;;
   *)
     if [ -z "$spec" ] ; then
