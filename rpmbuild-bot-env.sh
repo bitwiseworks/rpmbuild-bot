@@ -65,6 +65,7 @@ RPMBUILD_BOT_ARCH_LIST="pentium4 i686"
 RPMBUILD_BOT_ARCH_LIST_libc="i686" # Binary build -> no other archs.
 RPMBUILD_BOT_ARCH_LIST_kLIBCum="i686" # Binary build -> no other archs.
 RPMBUILD_BOT_ARCH_LIST_klusrmgr="i686" # Binary build -> no other archs.
+RPMBUILD_BOT_ARCH_LIST_os2tk45="i686" # Binary build -> no other archs.
 
 # Legacy DLLs for specific packages. Each RPM from the list (format is
 # "ABI|NAME|VERSION-RELEASE|[FILEMASK]|[ARCH]") for each target platform is
