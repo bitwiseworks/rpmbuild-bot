@@ -253,11 +253,15 @@ log_run()
   shift
   rm -f "$log"
   if [ -n "$log_to_console" ] ; then
-    "$@" 2>&1 | tee "$log"
+    # Do some magic redirection to preserve original error code
+    # (https://stackoverflow.com/questions/1221833/pipe-output-and-capture-exit-status-in-bash)
+    exec 4>&1
+    local rc=`{ { "$@" 2>&1 3>&-; printf $? 1>&3; } 4>&- | tee "$log" 1>&4; } 3>&1`
+    exec 4>&-
   else
     "$@" >"$log" 2>&1
+    local rc=$?
   fi
-  local rc=$?
   if [ $rc != 0 ] ; then
     log "ERROR: The following command failed with error code $rc:"
     log $@
