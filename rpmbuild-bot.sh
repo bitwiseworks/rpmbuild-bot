@@ -864,6 +864,8 @@ while [ -n "$1" ] ; do
     if [ -z "$command" ] ; then
       # Global options
       case "$1" in
+      -f) force="$1"
+        ;;
       -l) log_to_console="$1"
         ;;
       *) usage
