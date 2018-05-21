@@ -44,7 +44,7 @@ def repack_one_file (file):
 
   reqs = []
 
-  for r in filter (None, subprocess.check_output ([ RPM_EXE, '-q', '--requires', '-p', file ]).split ('\n')):
+  for r in filter (lambda r: r and r != '/@unixroot/usr/bin/sh', subprocess.check_output ([ RPM_EXE, '-q', '--requires', '-p', file ]).split ('\n')):
     s = r.split () [0]
     if not re.match (r'rpmlib\(.+\)', s):
       reqs.append (s)
