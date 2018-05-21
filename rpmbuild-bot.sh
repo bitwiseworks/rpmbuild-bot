@@ -571,7 +571,11 @@ test_cmd()
 {
   echo "Spec file: $spec_full"
 
-  local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
+  local spec_name_=`echo "${spec_name}" | tr - _`
+  eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name_}}"
+  [ -z "$arch_list" ] && arch_list="${RPMBUILD_BOT_ARCH_LIST}"
+
+  local base_arch="${arch_list##* }"
   local cmds=
 
   [ -z "$command_arg" ] && command_arg="all"
@@ -743,7 +747,10 @@ clean_cmd()
 {
   if [ "$command_arg" = "test" ] ; then
     # Cleanup after "test" command.
-    local base_arch="${RPMBUILD_BOT_ARCH_LIST##* }"
+    local spec_name_=`echo "${spec_name}" | tr - _`
+    eval local arch_list="\${RPMBUILD_BOT_ARCH_LIST_${spec_name_}}"
+    [ -z "$arch_list" ] && arch_list="${RPMBUILD_BOT_ARCH_LIST}"
+    local base_arch="${arch_list##* }"
     local log_file="$log_dir/test/$spec_name.log"
 
     [ -f "$log_file" ] || die "File '$test_log' is not found."
