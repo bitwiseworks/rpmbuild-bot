@@ -1,5 +1,6 @@
 #!/bin/sh
 
+# --rpmfcdebug can be used to debug rpm scripts, very useful
 #
 # rpmbuild-bot.sh: RPM Build Bot version 1.1.0.
 #
