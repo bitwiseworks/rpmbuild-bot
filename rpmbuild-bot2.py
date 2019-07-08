@@ -526,9 +526,9 @@ def func_log (log_file, func):
 # provided in spec. Assumes the `.spec` extension if it is missing. If the spec
 # file is found, this function will do the following:
 #
-# - Load `rpmbuild-bot2.ini` into config if it exists in a spec_dirs directory
+# - Load SCRIPT_INI_FILE into config if it exists in a spec_dirs directory
 #   containing the spec file (directly or through children).
-# - Load `rpmbuild-bot2.ini` into config if it exists in the same directory
+# - Load SCRIPT_INI_FILE into config if it exists in the same directory
 #   where the spec file is found.
 # - Log the name of the found spec file.
 # - Return a tuple with the full path to the spec file, spec base name (w/o
@@ -713,9 +713,12 @@ def resolve_path (name, arch, repo = None, group_config = None):
 # any failure.
 #
 
-def read_build_summary (spec_base, repo = None, group_config = None):
+def read_build_summary (spec_base, ver, repo, group_config):
 
   log_base = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base)
+
+  if ver:
+    log_base = os.path.join (log_base, ver)
 
   try:
 
@@ -738,6 +741,10 @@ def read_build_summary (spec_base, repo = None, group_config = None):
         d = dict ()
 
         for line in f:
+
+          # Stop on transition lines.
+          if line.startswith ('>'):
+            break
 
           ln += 1
           arch, name, mtime, size = line.strip ().split ('|')
@@ -816,7 +823,7 @@ def build_cmd ():
       if g_args.force_command:
         log_note ('Overwriting previous build of `%s` (%s) due to -f option.' % (spec_base, ver))
       else:
-        raise Error ('Build summary for `%s` (%s) already exists (%s)' % (spec_base, ver, summary),
+        raise Error ('Build summary for `%s` version %s already exists: %s' % (spec_base, ver, summary),
                      hint = 'Use -f option to overwrite this build with another one w/o uploading it.')
 
     remove_path (log_base)
@@ -907,7 +914,7 @@ def build_cmd ():
 
     with open ('%s.tmp' % summary, 'w') as f:
       f.write (ver_full + '\n')
-      f.write ('%s@%s|%s' % (g_username, g_hostname, time.time ()) + '\n')
+      f.write ('%s@%s|%s\n' % (g_username, g_hostname, time.time ()))
       f.write ('srpm|%s\n' % file_data (srpm))
       f.write ('zip|%s\n' % file_data (zip_file))
       for a in arch_rpms.keys ():
@@ -978,46 +985,64 @@ def move_cmd ():
   is_upload = g_args.COMMAND == 'upload'
 
   if not is_upload:
-    # No need in per-spec INI loading
-    raise Error ('Not implemented!')
+    # No need in per-spec INI loading, load them from each non-plus spec_dir instead.
+    config = copy.deepcopy (g_config)
+    for dirs in g_spec_dirs:
+      config.read (os.path.join (dirs [0], SCRIPT_INI_FILE))
 
   for spec in g_args.SPEC.split (','):
 
     if is_upload:
+       # Will use the last built version (if any).
       config = copy.deepcopy (g_config)
       full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
+      ver = None
+    else:
+      # Require the version argument.
+      try:
+        spec, ver = spec.split (':', 1)
+      except ValueError:
+        raise Error ('No version given for `%s`' % spec, hint = 'Use `list` command to get available versions')
+      if not re.match (r'^%s$' % VER_FULL_REGEX, ver):
+        raise Error ('Invalid version specification: `%s`' % ver)
+      spec_base = os.path.basename (spec)
 
-    group, to_repo, from_repo = (g_args.GROUP.split (':', 2) + [None, None]) [:3]
-
-    if is_upload:
-      # Always build directory (from_repo should be None).
-      if from_repo:
-        raise Error ('Extra input in GROUP spec: `%s`' % from_repo)
+    group, to_repo = (g_args.GROUP.split (':', 1) + [None]) [:2]
+    from_repo = None
 
     group_config = read_group_config (group, config)
     repos = group_config ['repos']
 
     if not is_upload and not from_repo:
-      # Look for summary in one of the repos.
+      # Look for a summary in one of the group's repos.
       for repo in repos:
-        if os.path.isfile (os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, 'summary')):
+        from_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver, 'summary')
+        if os.path.isfile (from_summary):
           from_repo = repo
+          break
+      if not from_repo:
+        raise Error ('No build summary for `%s` version %s in any of `%s` repositories' % (spec_base, ver, group),
+                     hint = 'Use `upload` command to upload the packages first.')
 
     if from_repo and not from_repo in group_config ['repos']:
-      raise Error ('No repository `%s` in group `%s`' % (from_repo, group))
+      raise Error ('No repository `%s` listed in configured group `%s`' % (from_repo, group))
 
     if not to_repo:
       if from_repo:
         i = repos.index (from_repo)
-        if i < len (repos):
+        if i < len (repos) - 1:
           to_repo = repos [i + 1]
         else:
-          raise Error ('No repository after `%s` in group `%s`' % (from_repo, group))
+          raise Error ('Build summary for `%s` already in `%s`, last in group `%s`: %s' % (spec_base, from_repo, group, from_summary),
+                       hint = 'Specify a target repository explicitly')
       else:
         to_repo = repos [0]
 
     if not to_repo in repos:
       raise Error ('No repository `%s` in group `%s`' % (to_repo, group))
+
+    if from_repo == to_repo:
+      raise Error ('Source and target repository are the same: `%s`' % (to_repo))
 
     from_repo_config = group_config ['repo.%s' % from_repo]
     to_repo_config = group_config ['repo.%s' % to_repo]
@@ -1025,10 +1050,10 @@ def move_cmd ():
     log ('From repository : %s' % from_repo_config ['base'])
     log ('To repository   : %s' % to_repo_config ['base'])
 
-    if is_upload:
-      ver_full, build_user, build_time, rpms = read_build_summary (spec_base, from_repo, group_config)
-    else:
-      raise Error ('Not implemented!')
+    ver_full, build_user, build_time, rpms = read_build_summary (spec_base, ver, from_repo, group_config)
+
+    if not is_upload and ver_full != ver:
+      raise Error ('Requested version %s differs from version %s stored in summary' % (ver, ver_full))
 
     log ('Version         : %s' % ver_full)
     log ('Build user      : %s' % build_user)
@@ -1039,8 +1064,18 @@ def move_cmd ():
       if g_args.force_command:
         log_note ('Overwriting previous build of `%s` due to -f option.' % spec_base)
       else:
-        raise Error ('Build summary for `%s` already exists (%s)' % (spec_base, to_summary),
+        raise Error ('Build summary for `%s` already exists: %s' % (spec_base, to_summary),
                      hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
+    elif is_upload:
+      # Search for a summary in any group's repo.
+      for repo in repos:
+        maybe_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver_full, 'summary')
+        if os.path.isfile (maybe_summary):
+          if g_args.force_command:
+            log_note ('Ignoring existing build of `%s` in repository `%s` due to -f option.' % (spec_base, repo))
+          else:
+            raise Error ('Build summary for `%s` already exists in `%s`: %s' % (spec_base, repo, maybe_summary),
+                         hint = 'If recovering from a failure, use -f option to ignore this build.')
 
     # Copy RPMs.
 
@@ -1056,11 +1091,11 @@ def move_cmd ():
         for src in rpms [arch]:
           rpms_to_copy.append ((src, dst))
 
-      for src, dst in rpms_to_copy:
-        log ('Copying %s -> %s...' % (src, dst))
-        if not os.path.isdir (dst):
-          raise Error ('%s' % dst, 'Not a directory')
-        shutil.copy2 (src, dst)
+    for src, dst in rpms_to_copy:
+      log ('Copying %s -> %s...' % (src, dst))
+      if not os.path.isdir (dst):
+        raise Error ('%s' % dst, 'Not a directory')
+      shutil.copy2 (src, dst)
 
     # Copy build logs and summary.
 
@@ -1088,6 +1123,10 @@ def move_cmd ():
     logs_to_copy = [zip_path, os.path.join (from_log, 'summary')]
     for src in logs_to_copy:
       shutil.copy2 (src, to_log)
+
+    # Record the transition.
+    with open (to_summary, 'a') as f:
+      f.write ('>%s|%s@%s|%s\n' % (to_repo, g_username, g_hostname, time.time ()))
 
     log ('Removing copied packages...')
 
@@ -1117,6 +1156,13 @@ def move_cmd ():
 
     # Remove source log dir.
     remove_path (from_log)
+
+    # Remove the base spec's dir (only if it's empty).
+    if not is_upload:
+      try:
+        os.rmdir (os.path.dirname (from_log))
+      except OSError:
+        pass
 
 
 #
@@ -1179,23 +1225,37 @@ g_cmd_build.set_defaults (cmd = build_cmd)
 # Parse data for upload command.
 
 g_cmd_upload = g_cmds.add_parser ('upload',
-  help = 'uupload build results to repository group', description = '''
+  help = 'upload build results to repository group', description = '''
 Uploads all RPMs generated from SPEC to a repository of a configured repository group.
-If REPO is not specified, the first GROUP's repository is used.''',
+If REPO is not specified, the first GROUP's repository is used as a target.''',
   formatter_class = g_cmdline.formatter_class)
 
 g_cmd_upload.add_argument ('GROUP', help = 'repository group and optional repository name from INI file', metavar = 'GROUP[:REPO]')
 g_cmd_upload.add_argument ('SPEC', help = 'spec file (comma-separated if more than one)')
 g_cmd_upload.set_defaults (cmd = move_cmd)
 
+# Parse data for move command.
+
+g_cmd_move = g_cmds.add_parser ('move',
+  help = 'move build results to another repository in group', description = '''
+Moves all RPMs generated from SPEC to a given repository of a configured repository group.
+The RPMs must already reside in a different repository of this group (as a result of `upload`
+or another `move`). If REPO is not specified, the next GROUP's repository is used as a target.''',
+  formatter_class = g_cmdline.formatter_class)
+
+g_cmd_move.add_argument ('GROUP', help = 'repository group and optional repository name from INI file', metavar = 'GROUP[:REPO]')
+g_cmd_move.add_argument ('SPEC', help = 'spec name and version (comma-separated if more than one)', metavar = 'SPEC:VER')
+g_cmd_move.set_defaults (cmd = move_cmd)
+
 # Finally, do the parsing.
 
 g_args = g_cmdline.parse_args ()
 
-g_main_ini_path = os.path.expanduser ('~/rpmbuild-bot2.ini')
+g_main_ini_path = os.path.expanduser ('~/%s' % SCRIPT_INI_FILE)
 
 g_config = Config (g_rpm)
 
+# List of lists, SCRIPT_INI_FILE in the 1st dir of each nested list is subject to loading.
 g_spec_dirs = []
 
 try:
