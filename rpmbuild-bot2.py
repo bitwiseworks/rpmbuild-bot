@@ -644,7 +644,7 @@ def read_group_config (group, config):
 
     rd = dict ()
 
-    repo_section = 'repository.%s:%s' % (group, repo)
+    repo_section = 'repository.%s.%s' % (group, repo)
     rd ['layout'] = config.get (repo_section, 'layout')
     rd ['base'] = repo_base = os.path.join (d ['base'], config.get (repo_section, 'base'))
 
