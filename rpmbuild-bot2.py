@@ -26,7 +26,7 @@ VER_FULL_REGEX = '\d+[.\d]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = '[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
 
 
-import sys, os, re, copy, argparse, ConfigParser, subprocess, datetime, traceback, shutil, time
+import sys, os, re, copy, argparse, ConfigParser, subprocess, datetime, traceback, shutil, time, fnmatch
 import getpass, socket # for user and hostname
 
 
@@ -690,6 +690,19 @@ def resolve_path (name, arch, repo = None, group_config = None):
 #
 # -----------------------------------------------------------------------------
 #
+# Exception for #read_build_summary to let callers customize the error when
+# a summary file is missing.
+#
+
+class NoBuildSummary (BaseException):
+  def __init__ (self, summary):
+    self.summary = summary
+    BaseException.__init__ (self, str (summary))
+
+
+#
+# -----------------------------------------------------------------------------
+#
 # Reads the build summary file of spec_base located in a given group and
 # returns the following as a tuple:
 #
@@ -702,6 +715,10 @@ def resolve_path (name, arch, repo = None, group_config = None):
 # The dict has the following keys: 'srpm', 'zip' and one key per each built
 # arch. The first two keys contain a single file name. Each of the arch keys
 # contains a list of file names.
+#
+# - List of move operations for this build where each entry is a list with the
+# following items: target repository, who moved (name@machine), unix time of
+# move.
 #
 # Passing None as group will read the summary from the local build directory.
 # Otherwise, it must be a repository group name from the INI file and config
@@ -738,15 +755,20 @@ def read_build_summary (spec_base, ver, repo, group_config):
           raise Error ('Invalid build user specification: `%s`' % build_user)
         build_time = float (build_time)
 
-        d = dict ()
+        rpms = dict ()
+        hist = []
 
         for line in f:
 
-          # Stop on transition lines.
-          if line.startswith ('>'):
-            break
-
           ln += 1
+
+          if line.startswith ('>'):
+            # Parse move history.
+            move_repo, move_user, move_time = line.split ('|')
+            move_repo = move_repo.lstrip('>')
+            hist.append ([move_repo, move_user, float (move_time)])
+            continue
+
           arch, name, mtime, size = line.strip ().split ('|')
           mtime = float (mtime)
           size = int (size)
@@ -758,12 +780,12 @@ def read_build_summary (spec_base, ver, repo, group_config):
             raise Error ('%s:%s' % (summary, ln), '\nRecorded size differs from actual for `%s`')
 
           if arch in ['srpm', 'zip']:
-            d [arch] = path
+            rpms [arch] = path
           else:
-            if arch in d:
-              d [arch].append (path)
+            if arch in rpms:
+              rpms [arch].append (path)
             else:
-              d [arch] = [path]
+              rpms [arch] = [path]
 
       except (IOError, OSError) as e:
         raise Error ('%s:%s:\n%s' % (summary, ln, str (e)))
@@ -771,12 +793,11 @@ def read_build_summary (spec_base, ver, repo, group_config):
       except ValueError:
         raise Error ('%s:%s' % (summary, ln), 'Invalid field type or number of fields')
 
-    return ver_full, build_user, build_time, d
+    return ver_full, build_user, build_time, rpms, hist
 
   except IOError as e:
     if e.errno == 2:
-      raise Error ('No build summary for `%s` (%s)' % (spec_base, summary),
-                   hint = 'Use `build` command to build the packages first.')
+      raise NoBuildSummary (summary)
     else:
       raise Error ('Cannot read build summary for `%s`:\n%s' % (spec_base, str (e)))
 
@@ -1005,7 +1026,7 @@ def move_cmd ():
         raise Error ('No version given for `%s`' % spec, hint = 'Use `list` command to get available versions')
       if not re.match (r'^%s$' % VER_FULL_REGEX, ver):
         raise Error ('Invalid version specification: `%s`' % ver)
-      spec_base = os.path.basename (spec)
+      spec_base = spec # Don't deal with path or ext here.
 
     group, to_repo = (g_args.GROUP.split (':', 1) + [None]) [:2]
     from_repo = None
@@ -1039,7 +1060,7 @@ def move_cmd ():
         to_repo = repos [0]
 
     if not to_repo in repos:
-      raise Error ('No repository `%s` in group `%s`' % (to_repo, group))
+      raise Error ('No repository `%s` in configured group `%s`' % (to_repo, group))
 
     if from_repo == to_repo:
       raise Error ('Source and target repository are the same: `%s`' % (to_repo))
@@ -1050,7 +1071,11 @@ def move_cmd ():
     log ('From repository : %s' % from_repo_config ['base'])
     log ('To repository   : %s' % to_repo_config ['base'])
 
-    ver_full, build_user, build_time, rpms = read_build_summary (spec_base, ver, from_repo, group_config)
+    try:
+      ver_full, build_user, build_time, rpms, _ = read_build_summary (spec_base, ver, from_repo, group_config)
+    except NoBuildSummary as e:
+      raise Error ('No build summary for `%s` (%s)' % (spec_base, e.summary),
+                   hint = 'Use `build` command to build the packages first.')
 
     if not is_upload and ver_full != ver:
       raise Error ('Requested version %s differs from version %s stored in summary' % (ver, ver_full))
@@ -1166,6 +1191,121 @@ def move_cmd ():
 
 
 #
+# -----------------------------------------------------------------------------
+#
+# List command.
+#
+
+def list_cmd ():
+
+  # No need in per-spec INI loading, load them from each non-plus spec_dir instead.
+  config = copy.deepcopy (g_config)
+  for dirs in g_spec_dirs:
+    config.read (os.path.join (dirs [0], SCRIPT_INI_FILE))
+
+  group_mask, repo_mask = (g_args.GROUP.split (':', 1) + ['*']) [:2]
+
+  for section in config.sections ():
+
+    if fnmatch.fnmatch (section, 'group.%s' % group_mask):
+
+      _, group = section.split ('.')
+      group_config = read_group_config (group, config)
+      repos = group_config ['repos']
+
+      for repo in repos:
+
+        if fnmatch.fnmatch (repo, repo_mask):
+
+          log_base = os.path.join (group_config ['repo.%s' % repo] ['log'])
+
+          # Ignore missing log dirs.
+          files = []
+          try:
+            files = os.listdir (log_base)
+          except OSError as e:
+            if e.errno == 2:
+              pass
+
+          for spec in files:
+
+            log_dir = os.path.join (log_base, spec)
+
+            if os.path.isdir (log_dir):
+              for spec_mask in g_args.SPEC.split (','):
+                if fnmatch.fnmatch (spec, spec_mask):
+                  for ver in os.listdir (log_dir):
+                    if os.path.isdir (os.path.join (log_dir, ver)):
+
+                      # NOTE: Don't call #read_build_summary to save time.
+                      log ('%-20s %s:%s' % ('%s:%s' % (group, repo), spec, ver))
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Info command.
+#
+
+def info_cmd ():
+
+  # No need in per-spec INI loading, load them from each non-plus spec_dir instead.
+  config = copy.deepcopy (g_config)
+  for dirs in g_spec_dirs:
+    config.read (os.path.join (dirs [0], SCRIPT_INI_FILE))
+
+  try:
+    group, repo = g_args.GROUP.split (':', 1)
+  except ValueError:
+    raise Error ('No repository given after `%s`' % g_args.GROUP)
+
+  for spec in g_args.SPEC.split (','):
+
+    try:
+      spec, ver = spec.split (':', 1)
+    except ValueError:
+      raise Error ('No version given for `%s`' % spec, hint = 'Use `list` command to get available versions')
+    if not re.match (r'^%s$' % VER_FULL_REGEX, ver):
+      raise Error ('Invalid version specification: `%s`' % ver)
+
+    group_config = read_group_config (group, config)
+    repo_config = group_config ['repo.%s' % repo]
+
+    try:
+      ver_full, build_user, build_time, rpms, hist = read_build_summary (spec, ver, repo, group_config)
+    except NoBuildSummary as e:
+      raise Error ('No build summary for `%s` version %s (%s)' % (spec, ver, e.summary))
+
+    log ('Rrepository     : %s' % repo_config ['base'])
+    log ('Version         : %s' % ver_full)
+    log ('Build user      : %s' % build_user)
+    log ('Build time      : %s' % to_localtimestr (build_time))
+
+    if False:
+      first = True
+      for rpm in rpms.keys ():
+        str = 'RPMs            : %s' if first else '                : %s'
+        first = False
+        if rpm in ['srpm', 'zip']:
+          log (str % os.path.basename (rpms [rpm]))
+        else:
+          for r in rpms [rpm]:
+            log (str % os.path.basename (r))
+    else:
+      log ('RPMs            :')
+      for arch in rpms.keys ():
+        str = '  %s'
+        if arch in ['srpm', 'zip']:
+          log (str % os.path.basename (rpms [arch]))
+        else:
+          for r in rpms [arch]:
+            log (str % os.path.basename (r))
+
+    log ('Move history    :')
+    for h in hist:
+      log ('  -> %s by %s on %s' % (h [0], h [1], to_localtimestr(h [2])))
+
+#
 # =============================================================================
 #
 # Main
@@ -1238,14 +1378,42 @@ g_cmd_upload.set_defaults (cmd = move_cmd)
 
 g_cmd_move = g_cmds.add_parser ('move',
   help = 'move build results to another repository in group', description = '''
-Moves all RPMs generated from SPEC to a given repository of a configured repository group.
+Moves all RPMs built from SPEC to a given repository of a configured repository group.
 The RPMs must already reside in a different repository of this group (as a result of `upload`
-or another `move`). If REPO is not specified, the next GROUP's repository is used as a target.''',
+or another `move`). If REPO is not specified, the next GROUP's repository is used as a target.
+VER must specify a version of the build to be moved.''',
   formatter_class = g_cmdline.formatter_class)
 
 g_cmd_move.add_argument ('GROUP', help = 'repository group and optional repository name from INI file', metavar = 'GROUP[:REPO]')
 g_cmd_move.add_argument ('SPEC', help = 'spec name and version (comma-separated if more than one)', metavar = 'SPEC:VER')
 g_cmd_move.set_defaults (cmd = move_cmd)
+
+# Parse data for list command.
+
+g_cmd_list = g_cmds.add_parser ('list',
+  help = 'list build versions available in remote repositories', description = '''
+Lists all versions of RPMs built from SPEC in a given repository of a configured repository group.
+Wildcard characters *, ? and [] may be used for GROUP, REPO and SPEC to limit the output to specific
+repositories and packages. If no arguments are given, all build results from all repositories will be
+listed.''',
+  formatter_class = g_cmdline.formatter_class)
+
+g_cmd_list.add_argument ('GROUP', help = 'repository group and optional repository name wildcards', metavar = 'GROUP[:REPO]', nargs = '?', default = '*')
+g_cmd_list.add_argument ('SPEC', help = 'spec name wildcard (comma-separated if more than one)', metavar = 'SPEC', nargs = '?', default = '*')
+g_cmd_list.set_defaults (cmd = list_cmd)
+
+# Parse data for info command.
+
+g_cmd_info = g_cmds.add_parser ('info',
+  help = 'show build info from remote repository', description = '''
+Shows information about RPMs built from SPEC in a given repository of a configured repository group.
+REPO must specify a GROUP's repository.
+VER must specify a version of the build to be shown.''',
+  formatter_class = g_cmdline.formatter_class)
+
+g_cmd_info.add_argument ('GROUP', help = 'repository group and repository name from INI file', metavar = 'GROUP:REPO')
+g_cmd_info.add_argument ('SPEC', help = 'spec name (comma-separated if more than one)', metavar = 'SPEC:VER')
+g_cmd_info.set_defaults (cmd = info_cmd)
 
 # Finally, do the parsing.
 
