@@ -26,7 +26,7 @@ VER_FULL_REGEX = '\d+[.\d]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = '[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
 
 
-import sys, os, re, copy, argparse, ConfigParser, subprocess, datetime, traceback, shutil, time, fnmatch
+import sys, os, re, copy, argparse, ConfigParser, subprocess, datetime, traceback, shutil, time, fnmatch, textwrap
 import getpass, socket # for user and hostname
 
 
@@ -172,9 +172,14 @@ def to_unixtimestr (unix_time):
 # If msg doesn't end with a new line terminator, it will be appended.
 #
 
-def log (msg):
+def log (msg, wrap_width = None, file_only = False):
 
-  if msg [-1] != '\n':
+  if not wrap_width == None:
+    if int (wrap_width) <= 0:
+      wrap_width = 79
+    msg = textwrap.fill (msg, wrap_width)
+
+  if len (msg) == 0 or msg [-1] != '\n':
     msg += '\n'
 
   if g_output_file:
@@ -182,15 +187,16 @@ def log (msg):
     g_output_file.write (msg)
 
     # Note: obey log_to_console only if the console is not redirected to a file.
-    if g_args.log_to_console and g_log != sys.stdout:
+    if g_args.log_to_console and g_log != sys.stdout and not file_only:
       sys.stdout.write (msg)
 
   else:
 
-    sys.stdout.write (msg)
+    if not file_only:
+      sys.stdout.write (msg)
 
     # Note: log to the file only when the console is not redirected to it.
-    if g_log and g_log != sys.stdout:
+    if (g_log and g_log != sys.stdout) or file_only:
       g_log.write (msg)
 
 
@@ -201,32 +207,68 @@ def log (msg):
 #
 # The kind string should indicate the message kind (ERROR, HINT, INFO etc). If
 # msg is None, prefix will be treated as msg. Otherwise, prefix will be put
-# between kind and msg, followed by a colon. If the resulting message doesn't
-# end with one of `.:!?`, a dot will be appended.
+# between kind and msg, followed by a colon.
 #
 
-def log_kind (kind, prefix, msg = None):
+def log_kind (kind, prefix, msg = None, **kwargs):
 
   if not msg:
     msg = prefix
     prefix = None
 
-  if not msg [-1] in '.:!?':
-    msg += '.'
-  log ('%s: ' % kind + (prefix and prefix + ': ' or '') + msg)
+  while msg.startswith ('\n'):
+    kind = '\n' + kind
+    msg = msg [1:]
+
+  log ('%s: ' % kind + (prefix and prefix + ': ' or '') + msg, **kwargs)
 
 
-def log_err (prefix, msg = None):
-  return log_kind ('ERROR', prefix, msg)
+def log_err (prefix, msg = None, **kwargs):
+  return log_kind ('ERROR', prefix, msg, **kwargs)
 
 
-def log_note (prefix, msg = None):
-  return log_kind ('NOTE', prefix, msg)
+def log_warn (prefix, msg = None, **kwargs):
+  return log_kind ('WARNING', prefix, msg, **kwargs)
 
 
-def log_hint (prefix, msg = None):
-  return log_kind ('HINT', prefix, msg)
+def log_note (prefix, msg = None, **kwargs):
+  return log_kind ('NOTE', prefix, msg, **kwargs)
 
+
+def log_hint (prefix, msg = None, **kwargs):
+  return log_kind ('HINT', prefix, msg, **kwargs)
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Prompts a user for an input and returns the result logging both the prompt
+# and the user answer.
+#
+# Returns None if interrupted with Ctrl-Break or such.
+#
+
+def log_input (prompt, choice = None, kind = None):
+
+  choice_upper = choice.upper () if choice else None
+
+  kind_str = '' if not kind else '%s: ' % kind
+  choice_str = '' if not choice else '[%s] ' % choice
+
+  try:
+    while True:
+      answer = raw_input ('%s%s %s' % (kind_str, prompt, choice_str))
+      answer_upper = answer.upper ()
+      answer_empty = answer == ''
+      if not choice or (not answer_empty and not answer_upper == choice_upper and answer_upper in choice_upper):
+        log ('%s%s %s%s' % (kind_str, prompt, choice_str, answer), file_only = True)
+        return answer_upper
+  except KeyboardInterrupt:
+    return None
+
+
+def log_input_warn (prompt, choice = None):
+  return log_input (prompt, choice, kind = 'WARNING')
 
 #
 # -----------------------------------------------------------------------------
@@ -286,12 +328,19 @@ def remove_path (path):
 #
 # This is a simplified shortcut to subprocess.check_output that raises RunError
 # on failure. Command must be a list where the first entry is the name of the
-# executable.
+# executable. Command's stderr is discarded.
+#
+# Note that this function will raise subprocess.CalledProcessError if the
+# command exits with a non-zero return code. To suppress this exception (and
+# get the return code together with the output, use #command_output_rc.
 #
 
-def command_output (command):
+def command_output (command, cwd = None):
   try:
-    return subprocess.check_output (command)
+    with open(os.devnull, 'w') as FNULL:
+      return subprocess.check_output (command, stderr = FNULL, cwd = cwd)
+  except subprocess.CalledProcessError as e:
+    raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -299,17 +348,121 @@ def command_output (command):
 #
 # -----------------------------------------------------------------------------
 #
-# Runs a shell command and captures its output.
+# Runs a shell command in a separate process and captures its output.
 #
 # This is a simplified shortcut to subprocess.check_output that raises RunError
-# on failure. Command must be a string representing a shell command.
+# on failure. Command must be a string representing a shell command. Command's
+# or shell's stderr is discarded.
+#
+# Note that this function will raise subprocess.CalledProcessError if the
+# command exits with a non-zero return code. To suppress this exception (and
+# get the return code together with the output, use #shell_output_rc.
 #
 
-def shell_output (command):
+def shell_output (command, cwd = None):
   try:
-    return subprocess.check_output (command, shell = True)
+    with open(os.devnull, 'w') as FNULL:
+      return subprocess.check_output (command, shell = True, cwd = cwd)
+  except subprocess.CalledProcessError as e:
+    raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
     raise RunError (' '.join (command), str (e))
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Same as #command_output but returns a tuple where the second value is
+# a command exit code.
+#
+
+def command_output_rc (command, cwd = None):
+  try:
+    with open(os.devnull, 'w') as FNULL:
+      return subprocess.check_output (command, stderr = FNULL, cwd = cwd), 0
+  except subprocess.CalledProcessError as e:
+    return e.output, e.returncode
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Same as #shell_output but returns a tuple where the second value is
+# a shell exit code.
+#
+
+def shell_output_rc (command, cwd = None):
+  try:
+    with open(os.devnull, 'w') as FNULL:
+      return subprocess.check_output (command, stderr = FNULL, shell = True, cwd = cwd), 0
+  except subprocess.CalledProcessError as e:
+    return e.output, e.returncode
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Same as #command_output but suppresses all command's output and returns its
+# exit code.
+#
+
+def command_rc (command, cwd = None):
+  try:
+    with open(os.devnull, 'w') as FNULL:
+      return subprocess.call (command, stdout = FNULL, stderr = FNULL, cwd = cwd)
+  except OSError as e:
+    raise RunError (' '.join (command), str (e))
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Same as #shell_output but suppresses all shell's output and returns its
+# exit code.
+#
+
+def shell_rc (command, cwd = None):
+  try:
+    with open(os.devnull, 'w') as FNULL:
+      return subprocess.call (command, stdout = FNULL, stderr = FNULL, shell = True, cwd = cwd)
+  except OSError as e:
+    raise RunError (' '.join (command), str (e))
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Same as #command_output but logs the command before executing it and does not
+# capture or suppress command's stdout or stderr.
+#
+
+def command (command, cwd = None):
+  command_str = ' '.join (command)
+  try:
+    log ('Running `%s`...' % command_str)
+    subprocess.check_call (command, cwd = cwd)
+  except subprocess.CalledProcessError as e:
+    raise RunError (command_str, 'Non-zero exit status %s' % str (e.returncode))
+  except OSError as e:
+    raise RunError (command_str, str (e))
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Same as #shell_output but logs the command before executing it and does not
+# capture or suppress shell's or command's stdout or stderr.
+#
+
+def shell (command, cwd = None):
+  command_str = ' '.join (command)
+  try:
+    log ('Running [%s]...' % command_str)
+    subprocess.check_call (command, shell = True, cwd = cwd)
+  except subprocess.CalledProcessError as e:
+    raise RunError (command_str, 'Non-zero exit status %s' % str (e.returncode))
+  except OSError as e:
+    raise RunError (command_str, str (e))
 
 
 #
@@ -329,7 +482,7 @@ def shell_output (command):
 # Raises Error if execution fails or terminates with a non-zero exit code.
 #
 
-def run_pipe (commands, regex = None, file = None):
+def run_pipe (commands, regex = None, file = None, cwd = None):
 
   if not file:
     file = g_output_file
@@ -351,10 +504,10 @@ def run_pipe (commands, regex = None, file = None):
     if len (commands) == 1:
 
       if capture_output:
-        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, bufsize = 1)
+        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd)
         capture_file = proc.stdout
       else:
-        proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, bufsize = 1)
+        proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd)
 
     else:
 
@@ -365,13 +518,13 @@ def run_pipe (commands, regex = None, file = None):
       else:
         wpipe = file
 
-      proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = wpipe)
+      proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = wpipe, cwd = cwd)
 
       last_proc = proc
       for cmd in commands [1:]:
         last_proc = subprocess.Popen (cmd, stdin = last_proc.stdout,
                                       stdout = wpipe if cmd == commands [-1] else subprocess.PIPE,
-                                      stderr = wpipe)
+                                      stderr = wpipe, cwd = cwd)
 
       if capture_output:
         os.close (wpipe)
@@ -415,8 +568,8 @@ def run_pipe (commands, regex = None, file = None):
 # Shortcut to #run_pipe for one command.
 #
 
-def run (command, regex = None):
-  return run_pipe ([command], regex)
+def run (command, regex = None, cwd = None):
+  return run_pipe ([command], regex, cwd = cwd)
 
 
 #
@@ -426,7 +579,7 @@ def run (command, regex = None):
 # be redirected to a log file.
 #
 
-def run_pipe_log (log_file, commands, regex = None):
+def run_pipe_log (log_file, commands, regex = None, cwd = None):
 
   with open (log_file, 'w', buffering = 1) as f:
 
@@ -437,7 +590,7 @@ def run_pipe_log (log_file, commands, regex = None):
 
       rc = 0
       msg = 'exit code 0'
-      lines = run_pipe (commands, regex, f)
+      lines = run_pipe (commands, regex, f, cwd = cwd)
 
     except RunError as e:
 
@@ -517,6 +670,38 @@ def func_log (log_file, func):
 
       if rc:
         raise RunError (str (func), msg, log_file = log_file)
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Returns a VCS type if the given path is in a tree which is under version
+# control, or None. Supported types are `git` and `svn`.
+#
+
+def get_vcs_type (path):
+
+  if os.path.isfile (path):
+    path = os.path.dirname (path)
+  if not os.path.isdir (path):
+    return None
+
+  path = os.path.abspath (path)
+
+  output, rc = command_output_rc (['git', 'rev-parse', '--is-inside-work-tree'], cwd = path)
+  if rc == 0 and output.strip () == 'true':
+    return 'git'
+
+  # With SVN, things are more complicated.
+  while True:
+    rc = command_rc (['svn', 'info'], cwd = path)
+    if rc == 0:
+      return 'svn'
+    if path.endswith (os.sep):
+      break
+    path = os.path.dirname (path)
+
+  return None
 
 
 #
@@ -821,6 +1006,18 @@ def build_prepare (full_spec, spec_base):
 #
 # -----------------------------------------------------------------------------
 #
+# Exception for #read_build_summary to let callers customize the error when
+# a summary file is missing.
+#
+
+class CommandCancelled (BaseException):
+  def __init__ (self):
+    BaseException.__init__ (self, 'Command cancelled')
+
+
+#
+# -----------------------------------------------------------------------------
+#
 # Build command.
 #
 
@@ -1048,7 +1245,11 @@ def move_cmd ():
     if from_repo and not from_repo in group_config ['repos']:
       raise Error ('No repository `%s` listed in configured group `%s`' % (from_repo, group))
 
+    prompt = False
+
     if not to_repo:
+      # Auto-detect target repo and cause a prompt.
+      prompt = True
       if from_repo:
         i = repos.index (from_repo)
         if i < len (repos) - 1:
@@ -1083,6 +1284,65 @@ def move_cmd ():
     log ('Version         : %s' % ver_full)
     log ('Build user      : %s' % build_user)
     log ('Build time      : %s' % to_localtimestr (build_time))
+
+    if prompt:
+      answer = log_input_warn ('Target repository `%s` was auto-detected. Proceed?' % to_repo, 'YN')
+      if not answer == 'Y':
+        raise CommandCancelled ()
+
+    # Commit the spec file and dir.
+    if is_upload:
+
+      commit_msg = 'spec: %s: Release version %s.' % (spec_base, ver_full)
+
+      vcs = get_vcs_type (full_spec).upper ()
+      log ('\nThe spec file is under %s version control and needs to be committed as:' % vcs)
+      log ('  "%s"\n\n' % commit_msg)
+      log ('The working copy will be updated now and then you will get a diff for careful '
+           'inspection. If this process (or a subsequent commit) fails, you will have to '
+           'fix the failure manually and then re-run the `upload` command again.', wrap_width = 0)
+      if not log_input ('Press Enter to continue.') == '':
+        raise CommandCancelled ()
+
+      log ('')
+      spec_dir = os.path.dirname (full_spec)
+      spec_file = os.path.basename (full_spec)
+
+      if vcs == 'GIT':
+        # Check for untracked files in spec AUX dir.
+        untracked = command_output (['git', 'ls-files', '--other', '--', '.'], cwd = spec_aux_dir)
+        if untracked.strip () != '':
+          raise Error ('Untracked files are found in `%s`:\n%s\n\n' % (spec_aux_dir, '\n'.join ('  %s' % f for f in untracked.splitlines ())),
+                       hint = 'Add these files with `git add` (or remove them) manually and retry.')
+        # Check for modified files.
+        commit_files = ['.'] if spec_dir == spec_aux_dir else [spec_file, spec_aux_dir]
+        modified = [os.path.basename (f) for f in command_output (['git', 'diff', '--name-only', '--'] + commit_files, cwd = spec_dir).splitlines ()]
+        if not spec_file in modified:
+          last_spec_msg = command_output (['git', 'log', '-n', '1', '--pretty=format:%s', '--', spec_file], cwd = spec_dir).strip ()
+          if last_spec_msg != commit_msg:
+            raise Error ('`%s` is not modified and has a different last commit message:\n  "%s"' % (spec_file, last_spec_msg))
+        if len (modified) > 0:
+          # Show diffs.
+          command (['git', 'diff', '--'] + commit_files, cwd = spec_dir)
+          # Confirm diffs.
+          answer = log_input ('Type YES if the diff is okay to be committed.')
+          if answer != 'YES':
+            raise CommandCancelled ()
+          # Add changes.
+          command (['git', 'add', '--'] + commit_files, cwd = spec_dir)
+          # Commit.
+          command (['git', 'commit', '-m', commit_msg, '--'] + commit_files, cwd = spec_dir)
+        else:
+          log ('No modified files but the last commit message of `%s` matches the above.' % spec_file)
+        # Finally, push the commit.
+        answer = log_input ('Push the commit to %s and upload RPMs to `%s`?' % (vcs, to_repo), 'YN')
+        if not answer == 'Y':
+          raise CommandCancelled ()
+        command (['git', 'pull'], cwd = spec_dir)
+        command (['git', 'push'], cwd = spec_dir)
+      else:
+        raise Error ('Unsupported version control system: %s' % vcs)
+
 
     to_summary = os.path.join (to_repo_config ['log'], spec_base, ver_full, 'summary')
     if os.path.isfile (to_summary):
@@ -1276,15 +1536,15 @@ def info_cmd ():
     except NoBuildSummary as e:
       raise Error ('No build summary for `%s` version %s (%s)' % (spec, ver, e.summary))
 
-    log ('Rrepository     : %s' % repo_config ['base'])
-    log ('Version         : %s' % ver_full)
-    log ('Build user      : %s' % build_user)
-    log ('Build time      : %s' % to_localtimestr (build_time))
+    log ('Rrepository  : %s' % repo_config ['base'])
+    log ('Version      : %s' % ver_full)
+    log ('Build user   : %s' % build_user)
+    log ('Build time   : %s' % to_localtimestr (build_time))
 
-    if False:
+    if True:
       first = True
       for rpm in rpms.keys ():
-        str = 'RPMs            : %s' if first else '                : %s'
+        str = 'RPMs         : %s' if first else '             : %s'
         first = False
         if rpm in ['srpm', 'zip']:
           log (str % os.path.basename (rpms [rpm]))
@@ -1292,7 +1552,7 @@ def info_cmd ():
           for r in rpms [rpm]:
             log (str % os.path.basename (r))
     else:
-      log ('RPMs            :')
+      log ('RPMs         :')
       for arch in rpms.keys ():
         str = '  %s'
         if arch in ['srpm', 'zip']:
@@ -1301,9 +1561,16 @@ def info_cmd ():
           for r in rpms [arch]:
             log (str % os.path.basename (r))
 
-    log ('Move history    :')
-    for h in hist:
-      log ('  -> %s by %s on %s' % (h [0], h [1], to_localtimestr(h [2])))
+    if True:
+      first = True
+      for h in hist:
+        str = 'Move history :' if first else '             :'
+        first = False
+        log ('%s -> %s by %s on %s' % (str, h [0], h [1], to_localtimestr(h [2])))
+    else:
+      log ('Move history :')
+      for h in hist:
+        log ('  -> %s by %s on %s' % (h [0], h [1], to_localtimestr(h [2])))
 
 #
 # =============================================================================
@@ -1516,6 +1783,10 @@ except Error as e:
     log_hint (e.hint)
   rc = e.code
 
+except CommandCancelled:
+
+  rc = 126
+
 except:
 
   log_err ('Unexpected exception occured:')
@@ -1528,7 +1799,7 @@ finally:
   elapsed = str (end_ts - g_start_ts).rstrip ('0')
 
   if g_log != sys.stdout:
-    sys.stdout.write ('%s (%s s).\n' % (rc and 'Failed with exit code %s' % rc or 'Succeeded', elapsed))
+    sys.stdout.write ('%s (%s s).\n' % (not rc and 'Succeeded' or rc == 126 and 'Cancelled' or 'Failed with exit code %s' % rc, elapsed))
 
   # Finalize own log file.
   if g_log:
