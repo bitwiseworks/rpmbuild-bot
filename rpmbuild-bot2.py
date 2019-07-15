@@ -902,6 +902,8 @@ class NoBuildSummary (BaseException):
 # - Name of the user who built the spec followed by `@` and the hostname (both
 # are non-empty strings).
 #
+# - Timestamp of the build.
+#
 # - Dict containing resolved file names of all RPM files built from the spec.
 # The dict has the following keys: 'srpm', 'zip' and one key per each built
 # arch. The first two keys contain a single file name. Each of the arch keys
@@ -966,9 +968,9 @@ def read_build_summary (spec_base, ver, repo, group_config):
           path = resolve_path (name, arch, repo, group_config)
 
           if os.path.getmtime (path) != mtime:
-            raise Error ('%s:%s' % (summary, ln), '\nRecorded mtime differs from actual for `%s`')
+            raise Error ('%s:%s' % (summary, ln), 'Recorded mtime differs from actual for `%s`' % path)
           if os.path.getsize (path) != size:
-            raise Error ('%s:%s' % (summary, ln), '\nRecorded size differs from actual for `%s`')
+            raise Error ('%s:%s' % (summary, ln), 'Recorded size differs from actual for `%s`' % path)
 
           if arch in ['srpm', 'zip']:
             rpms [arch] = path
@@ -1332,6 +1334,44 @@ def move_cmd ():
       if not answer == 'Y':
         raise CommandCancelled ()
 
+    old_repo = None
+    old_summary = None
+
+    to_summary = os.path.join (to_repo_config ['log'], spec_base, ver_full, 'summary')
+    if os.path.isfile (to_summary):
+      if g_args.force_command:
+        log_note ('Overwriting previous build of `%s` due to -f option.' % spec_base)
+        old_repo = to_repo
+        old_summary = to_summary
+      else:
+        raise Error ('Build summary for `%s` already exists: %s' % (spec_base, to_summary),
+                     hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
+    elif is_upload:
+      # Search for a summary in any group's repo.
+      for repo in repos:
+        maybe_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver_full, 'summary')
+        if os.path.isfile (maybe_summary):
+          if g_args.force_command:
+            log_note ('Ignoring existing build of `%s` in repository `%s` due to -f option.' % (spec_base, repo))
+            old_repo = repo
+            old_summary = maybe_summary
+          else:
+            raise Error ('Build summary for `%s` already exists in `%s`: %s' % (spec_base, repo, maybe_summary),
+                         hint = 'If recovering from a failure, use -f option to ignore this build.')
+
+    # Attempt to clean up files from the old summary.
+    if old_repo:
+      log ('Removing old build''s packages and logs for `%s`...' % old_summary)
+      _, _, _, old_rpms, _ = read_build_summary (spec_base, ver_full, old_repo, group_config)
+      for arch in old_rpms.keys ():
+        if arch in ['srpm', 'zip']:
+          f = old_rpms [arch]
+          os.remove (f)
+        else:
+          for f in old_rpms [arch]:
+            os.remove (f)
+      remove_path (os.path.dirname (old_summary))
+
     # Commit the spec file and dir.
     if is_upload:
 
@@ -1385,24 +1425,6 @@ def move_cmd ():
       else:
         raise Error ('Unsupported version control system: %s' % vcs)
 
-
-    to_summary = os.path.join (to_repo_config ['log'], spec_base, ver_full, 'summary')
-    if os.path.isfile (to_summary):
-      if g_args.force_command:
-        log_note ('Overwriting previous build of `%s` due to -f option.' % spec_base)
-      else:
-        raise Error ('Build summary for `%s` already exists: %s' % (spec_base, to_summary),
-                     hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
-    elif is_upload:
-      # Search for a summary in any group's repo.
-      for repo in repos:
-        maybe_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver_full, 'summary')
-        if os.path.isfile (maybe_summary):
-          if g_args.force_command:
-            log_note ('Ignoring existing build of `%s` in repository `%s` due to -f option.' % (spec_base, repo))
-          else:
-            raise Error ('Build summary for `%s` already exists in `%s`: %s' % (spec_base, repo, maybe_summary),
-                         hint = 'If recovering from a failure, use -f option to ignore this build.')
 
     # Copy RPMs.
 
