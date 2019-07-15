@@ -990,22 +990,6 @@ def read_build_summary (spec_base, ver, repo, group_config):
 #
 # -----------------------------------------------------------------------------
 #
-# Prepare for build and test commands. This includes the following:
-#
-# - Download legacy runtime libraries for the given spec if spec legacy is
-#   configured.
-#
-# TODO: Actually implement it.
-#
-
-def build_prepare (full_spec, spec_base):
-
-  pass
-
-
-#
-# -----------------------------------------------------------------------------
-#
 # Exception for #read_build_summary to let callers customize the error when
 # a summary file is missing.
 #
@@ -1013,6 +997,32 @@ def build_prepare (full_spec, spec_base):
 class CommandCancelled (BaseException):
   def __init__ (self):
     BaseException.__init__ (self, 'Command cancelled')
+
+
+#
+# -----------------------------------------------------------------------------
+#
+# Prepare for build and test commands. This includes the following:
+#
+# - Copy files from spec_aux_dir to source_dir (to be used as an override for
+# _sourcedir when calling rpmbuild for full_spec).
+#
+# - Download legacy runtime libraries for the given spec if spec legacy is
+# configured (TODO: Actually implement it).
+#
+
+def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir):
+
+  source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
+  ensure_dir (source_dir)
+
+  # Copy all files from aux dir but spec itself.
+
+  for f in os.listdir (spec_aux_dir):
+    ff = os.path.join (spec_aux_dir, f)
+    if os.path.samefile (ff, full_spec):
+      continue
+    shutil.copy2 (ff, source_dir)
 
 
 #
@@ -1027,6 +1037,9 @@ def build_cmd ():
 
     config = copy.deepcopy (g_config)
     full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
+
+    source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
+    build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
 
     archs = config.getwords ('general:archs')
 
@@ -1059,7 +1072,7 @@ def build_cmd ():
       log ('Creating RPMs for `%(arch)s` target (logging to %(log_file)s)...' % locals ())
 
       rpms = run_log (log_file, [RPMBUILD_EXE, '--target=%s' % arch, '-bb',
-                                 '--define=_sourcedir %s' % spec_aux_dir, full_spec],
+                                 '--define=_sourcedir %s' % source_dir, full_spec],
                       r'^Wrote: +(.+\.(?:%s|noarch)\.rpm)$' % arch)
 
       if len (rpms):
@@ -1084,7 +1097,7 @@ def build_cmd ():
     log ('Creating SRPM (logging to %s)...' % log_file)
 
     srpm = run_log (log_file, [RPMBUILD_EXE, '-bs',
-                               '--define=_sourcedir %s' % spec_aux_dir, full_spec],
+                               '--define=_sourcedir %s' % source_dir, full_spec],
                     r'^Wrote: +(.+\.src\.rpm)$') [0]
 
     if not srpm:
@@ -1167,8 +1180,9 @@ def test_cmd ():
     config = copy.deepcopy (g_config)
     full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
 
+    source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
     if g_args.STEP == 'all':
-      build_prepare (full_spec, spec_base)
+      build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
 
     log_file = os.path.join (g_log_dir, 'test',
                              spec_base + ('' if g_args.STEP == 'all' else '.' + g_args.STEP) + '.log')
@@ -1180,7 +1194,7 @@ def test_cmd ():
     log ('Creating test RPMs for `%(base_arch)s` target (logging to %(log_file)s)...' % locals ())
 
     rpms = run_log (log_file, [RPMBUILD_EXE, '--target=%s' % base_arch, '--define=dist %nil',
-                               '--define=_sourcedir %s' % spec_aux_dir] + opts + [full_spec],
+                               '--define=_sourcedir %s' % source_dir] + opts + [full_spec],
                     r'^Wrote: +(.+\.(?:%s|noarch)\.rpm)$' % base_arch)
 
     # Show the generated RPMs when appropriate.
@@ -1313,7 +1327,7 @@ def move_cmd ():
         untracked = command_output (['git', 'ls-files', '--other', '--', '.'], cwd = spec_aux_dir)
         if untracked.strip () != '':
           raise Error ('Untracked files are found in `%s`:\n%s\n\n' % (spec_aux_dir, '\n'.join ('  %s' % f for f in untracked.splitlines ())),
-                       hint = 'Add these files with `git add` (or remove them) manually and retry.')
+                       hint = 'Add these files with `git add` (or remove/ignore them) manually and retry.')
         # Check for modified files.
         commit_files = ['.'] if spec_dir == spec_aux_dir else [spec_file, spec_aux_dir]
         modified = [os.path.basename (f) for f in command_output (['git', 'diff', '--name-only', '--'] + commit_files, cwd = spec_dir).splitlines ()]
@@ -1779,6 +1793,8 @@ except RunError as e:
 except Error as e:
 
   log_err (e.prefix, e.msg)
+  if e.prefix == 'config' and not e.hint:
+    e.hint = 'Check `%s` or spec-specific INI files' % g_main_ini_path
   if e.hint:
     log_hint (e.hint)
   rc = e.code
