@@ -1002,6 +1002,24 @@ class CommandCancelled (BaseException):
 #
 # -----------------------------------------------------------------------------
 #
+# Get a list of archs to build for spec.
+#
+
+def get_spec_archs (config, spec_base):
+
+  key = 'specs.archs'
+  if config.has_option (key, spec_base):
+    archs = config.getwords (key, spec_base)
+    if len (archs) < 1:
+      raise Error ('config', 'No value for option `%s:%s`' % (key, spec_base));
+    return archs
+
+  return config.getwords ('general:archs')
+
+
+#
+# -----------------------------------------------------------------------------
+#
 # Prepare for build and test commands. This includes the following:
 #
 # - Copy files from spec_aux_dir to source_dir (to be used as an override for
@@ -1041,7 +1059,7 @@ def build_cmd ():
     source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
     build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
 
-    archs = config.getwords ('general:archs')
+    archs = get_spec_archs (config, spec_base)
 
     log ('Targets: ' + ', '.join (archs) + ', ZIP (%s), SRPM' % archs [0])
 
@@ -1189,7 +1207,7 @@ def test_cmd ():
 
     rotate_log (log_file)
 
-    base_arch = config.getwords ('general:archs') [0]
+    base_arch = get_spec_archs (config, spec_base) [0]
 
     log ('Creating test RPMs for `%(base_arch)s` target (logging to %(log_file)s)...' % locals ())
 
