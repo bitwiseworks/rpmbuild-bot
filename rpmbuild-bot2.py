@@ -308,14 +308,23 @@ def ensure_dir (path):
 # Removes a file or a directory (including its contents) at path. Does not raise
 # an exception if the path does not exist.
 #
+# If optional @c relaxed is True, then the "Resource busy" error will also be
+# ignored. This is useful when deleting directories which the user may be
+# currently staying at (e.g. when examining logs). Shall not be set to True
+# when the directory must for sure not exist.
+#
 
-def remove_path (path):
+def remove_path (path, relaxed = False):
 
   try:
     if os.path.isfile (path):
       os.remove (path)
     elif os.path.isdir (path):
-      shutil.rmtree (path)
+      try:
+        shutil.rmtree (path)
+      except OSError as e:
+        if not relaxed or e.errno != 16:
+          raise
   except OSError as e:
     if e.errno != 2:
       raise
@@ -605,10 +614,7 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
       f.write ('[%s, %s, %s s]\n' % (end_ts.strftime (DATETIME_FMT), msg, elapsed))
 
       if rc:
-        raise Error ('The following command failed with: %s:\n'
-                     '  %s'
-                     % (msg, ' '.join (cmd)),
-                     log_file = log_file)
+        raise RunError (cmd, msg, log_file = log_file)
 
   return lines
 
@@ -1075,14 +1081,14 @@ def build_cmd ():
         raise Error ('Build summary for `%s` version %s already exists: %s' % (spec_base, ver, summary),
                      hint = 'Use -f option to overwrite this build with another one w/o uploading it.')
 
-    remove_path (log_base)
+    remove_path (log_base, relaxed = True)
     ensure_dir (log_base)
 
     # Generate RPMs for all architectures.
 
-    noarch_only = True
     base_rpms = None
     arch_rpms = dict ()
+    noarch_rpms = dict ()
 
     for arch in archs:
 
@@ -1094,20 +1100,24 @@ def build_cmd ():
                       r'^Wrote: +(.+\.(?:%s|noarch)\.rpm)$' % arch)
 
       if len (rpms):
-        arch_rpms [arch] = rpms
         # Save the base arch RPMs for later.
         if not base_rpms:
           base_rpms = rpms
-        # Check for noarch only.
+        # Deal with noarch.
+        arch_only = []
         for r in rpms:
-          if r.endswith ('.%s.rpm' % arch):
-            noarch_only = False
-            break
-        if noarch_only:
+          if r.endswith ('.noarch.rpm'):
+            noarch_rpms [r] = True
+          else:
+            arch_only.append (r)
+        if len (arch_only) == 0:
           log ('Skipping other targets because `%s` produced only `noarch` RPMs.' % arch)
           break
+        arch_rpms [arch] = arch_only
       else:
         raise Error ('Cannot find `.(%(arch)s|noarch).rpm` file names in `%(log_file)s`.' % locals ())
+
+    arch_rpms ['noarch'] = noarch_rpms.keys ()
 
     # Generate SRPM.
 
@@ -1427,7 +1437,8 @@ def move_cmd ():
       log ('Packing logs to %s...' % zip_path)
       zip_files = []
       for arch in rpms.keys ():
-        zip_files.append (os.path.join (from_log, '%s.log' % arch))
+        if arch != 'noarch':
+          zip_files.append (os.path.join (from_log, '%s.log' % arch))
       run_pipe ([['zip', '-jy9', zip_path] + zip_files])
 
     to_log = os.path.join (to_repo_config ['log'], spec_base, ver_full)
@@ -1801,8 +1812,8 @@ except (IOError, OSError) as e:
 except RunError as e:
 
   msg = 'The following command failed with: %s:\n  %s' % (e.msg, e.cmd)
-  if e.log_file:
-    msg += '\nInspect `%s` for more info.' % e.log_file
+  if not e.hint and e.log_file:
+    e.hint = 'Inspect `%s` for more info.' % e.log_file
   log_err (e.prefix, msg)
   if e.hint:
     log_hint (e.hint)
