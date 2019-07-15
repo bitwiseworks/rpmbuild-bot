@@ -1413,6 +1413,7 @@ def move_cmd ():
           # Add changes.
           command (['git', 'add', '--'] + commit_files, cwd = spec_dir)
           # Commit.
+          command (['git', 'pull'], cwd = spec_dir)
           command (['git', 'commit', '-m', commit_msg, '--'] + commit_files, cwd = spec_dir)
         else:
           log ('No modified files but the last commit message of `%s` matches the above.' % spec_file)
@@ -1420,7 +1421,6 @@ def move_cmd ():
         answer = log_input ('Push the commit to %s and upload RPMs to `%s`?' % (vcs, to_repo), 'YN')
         if not answer == 'Y':
           raise CommandCancelled ()
-        command (['git', 'pull'], cwd = spec_dir)
         command (['git', 'push'], cwd = spec_dir)
       else:
         raise Error ('Unsupported version control system: %s' % vcs)
