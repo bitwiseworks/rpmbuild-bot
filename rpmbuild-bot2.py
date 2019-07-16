@@ -1410,10 +1410,9 @@ def move_cmd ():
           answer = log_input ('Type YES if the diff is okay to be committed.')
           if answer != 'YES':
             raise CommandCancelled ()
-          # Add changes.
+          # Add changes and commit.
+          command (['git', 'pull', '--no-rebase'], cwd = spec_dir)
           command (['git', 'add', '--'] + commit_files, cwd = spec_dir)
-          # Commit.
-          command (['git', 'pull'], cwd = spec_dir)
           command (['git', 'commit', '-m', commit_msg, '--'] + commit_files, cwd = spec_dir)
         else:
           log ('No modified files but the last commit message of `%s` matches the above.' % spec_file)
