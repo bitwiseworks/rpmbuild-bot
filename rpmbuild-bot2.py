@@ -56,6 +56,9 @@ class Config (ConfigParser.SafeConfigParser):
     self.rpm_macros = rpm_macros
     ConfigParser.SafeConfigParser.__init__ (self, *args, **kwargs)
 
+    # Keep option names case-sensitive (vital for 'environment' section).
+    self.optionxform = str
+
   def __deepcopy__ (self, memo):
 
     copy = Config (self.rpm_macros, defaults = self.defaults ())
@@ -347,7 +350,7 @@ def remove_path (path, relaxed = False):
 def command_output (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, cwd = cwd)
+      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
     raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
@@ -371,7 +374,7 @@ def command_output (command, cwd = None):
 def shell_output (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, shell = True, cwd = cwd)
+      return subprocess.check_output (command, shell = True, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
     raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
@@ -388,7 +391,7 @@ def shell_output (command, cwd = None):
 def command_output_rc (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, cwd = cwd), 0
+      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env), 0
   except subprocess.CalledProcessError as e:
     return e.output, e.returncode
 
@@ -403,7 +406,7 @@ def command_output_rc (command, cwd = None):
 def shell_output_rc (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, shell = True, cwd = cwd), 0
+      return subprocess.check_output (command, stderr = FNULL, shell = True, cwd = cwd, env = g_run_env), 0
   except subprocess.CalledProcessError as e:
     return e.output, e.returncode
 
@@ -418,7 +421,7 @@ def shell_output_rc (command, cwd = None):
 def command_rc (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.call (command, stdout = FNULL, stderr = FNULL, cwd = cwd)
+      return subprocess.call (command, stdout = FNULL, stderr = FNULL, cwd = cwd, env = g_run_env)
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -433,7 +436,7 @@ def command_rc (command, cwd = None):
 def shell_rc (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.call (command, stdout = FNULL, stderr = FNULL, shell = True, cwd = cwd)
+      return subprocess.call (command, stdout = FNULL, stderr = FNULL, shell = True, cwd = cwd, env = g_run_env)
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -449,7 +452,7 @@ def command (command, cwd = None):
   command_str = ' '.join (command)
   try:
     log ('Running `%s`...' % command_str)
-    subprocess.check_call (command, cwd = cwd)
+    subprocess.check_call (command, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
     raise RunError (command_str, 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
@@ -467,7 +470,7 @@ def shell (command, cwd = None):
   command_str = ' '.join (command)
   try:
     log ('Running [%s]...' % command_str)
-    subprocess.check_call (command, shell = True, cwd = cwd)
+    subprocess.check_call (command, shell = True, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
     raise RunError (command_str, 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
@@ -513,10 +516,10 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
     if len (commands) == 1:
 
       if capture_output:
-        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd)
+        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd, env = g_run_env)
         capture_file = proc.stdout
       else:
-        proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd)
+        proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd, env = g_run_env)
 
     else:
 
@@ -527,13 +530,13 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
       else:
         wpipe = file
 
-      proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = wpipe, cwd = cwd)
+      proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = wpipe, cwd = cwd, env = g_run_env)
 
       last_proc = proc
       for cmd in commands [1:]:
         last_proc = subprocess.Popen (cmd, stdin = last_proc.stdout,
                                       stdout = wpipe if cmd == commands [-1] else subprocess.PIPE,
-                                      stderr = wpipe, cwd = cwd)
+                                      stderr = wpipe, cwd = cwd, env = g_run_env)
 
       if capture_output:
         os.close (wpipe)
@@ -725,6 +728,8 @@ def get_vcs_type (path):
 # - Return a tuple with the full path to the spec file, spec base name (w/o
 #   path or extension) and full path to the auxiliary source directory for this
 #   spec.
+# - Set the global g_run_env variable to the environment found in the INI file
+#   (if any), joined with the system environment.
 #
 # Otherwise, Error is raised and no INI files are loaded.
 #
@@ -796,6 +801,11 @@ def resolve_spec (spec, spec_dirs, config):
   # Validate some mandatory config options.
   if not config.get ('general:archs'):
     raise Error ('config', 'No value for option `general:archs`');
+
+  # Load the environment.
+  g_run_env = copy.deepcopy (os.environ)
+  for var in config.options ('environment'):
+    g_run_env [var] = config.get ('environment', var)
 
   return (full_spec, spec_base, spec_aux_dir)
 
@@ -1657,6 +1667,9 @@ g_rpmbuild_used_macros = ['_topdir', '_sourcedir', 'dist', '_bindir', '_rpmdir',
 # Script's output redirection (for #func_log).
 g_output_file = None
 
+# Environment used for all external commands.
+g_run_env = None
+
 # Parse command line.
 
 g_cmdline = argparse.ArgumentParser (formatter_class = argparse.ArgumentDefaultsHelpFormatter, description = '''
@@ -1807,7 +1820,7 @@ try:
 
   # Create own log file unless redirected to a file.
 
-  if sys.stdout.isatty():
+  if sys.stdout.isatty ():
     d = os.path.join (g_log_dir, SCRIPT_LOG_FILE)
     rotate_log (d)
     g_log = open (d, 'w', buffering = 1)
