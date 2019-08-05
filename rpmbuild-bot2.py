@@ -1225,9 +1225,10 @@ def test_cmd ():
     if g_args.STEP == 'all':
       build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
 
-    log_file = os.path.join (g_log_dir, 'test',
-                             spec_base + ('' if g_args.STEP == 'all' else '.' + g_args.STEP) + '.log')
+    log_base = os.path.join (g_log_dir, 'test', spec_base)
+    ensure_dir (log_base)
 
+    log_file = os.path.join (log_base, g_args.STEP + '.log')
     rotate_log (log_file)
 
     base_arch = get_spec_archs (config, spec_base) [0]
