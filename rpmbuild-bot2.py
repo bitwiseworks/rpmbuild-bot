@@ -804,8 +804,9 @@ def resolve_spec (spec, spec_dirs, config):
 
   # Load the environment.
   g_run_env = copy.deepcopy (os.environ)
-  for var in config.options ('environment'):
-    g_run_env [var] = config.get ('environment', var)
+  if config.has_section ('environment'):
+    for var in config.options ('environment'):
+      g_run_env [var] = config.get ('environment', var)
 
   return (full_spec, spec_base, spec_aux_dir)
 
