@@ -1455,7 +1455,7 @@ def move_cmd ():
           if answer != 'YES':
             raise CommandCancelled ()
           # Add changes and commit.
-          command (['git', 'pull', '--no-rebase'], cwd = spec_dir)
+          command (['git', 'pull', '--no-rebase', '--ff-only'], cwd = spec_dir)
           command (['git', 'add', '--'] + commit_files, cwd = spec_dir)
           command (['git', 'commit', '-m', commit_msg, '--'] + commit_files, cwd = spec_dir)
         else:
