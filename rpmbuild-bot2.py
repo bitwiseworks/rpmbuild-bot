@@ -1227,7 +1227,7 @@ def test_cmd ():
     base_arch = get_spec_archs (config, spec_base) [0]
 
     source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
-    if g_args.STEP == 'all':
+    if g_args.STEP in ['all', 'install']:
       build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
 
     log_base = os.path.join (g_log_dir, 'test', spec_base)
@@ -1237,7 +1237,7 @@ def test_cmd ():
     if purge:
 
       rpms = set ()
-      for l in 'all', 'pack':
+      for l in ['all', 'pack']:
         lf = os.path.join (log_base, l + '.log')
         if os.path.isfile (lf):
           with open (lf, 'r') as f:
@@ -1252,7 +1252,7 @@ def test_cmd ():
             os.remove (r)
         for l in g_test_cmd_steps.keys ():
           # delete log and rotate_log product (nb: keep in sync)
-          for ext in '.log', '.log.bak':
+          for ext in ['.log', '.log.bak']:
             lf = os.path.join (log_base, l + ext)
             if os.path.isfile (lf):
               log ('Deleting %s...' % lf)
@@ -1260,7 +1260,7 @@ def test_cmd ():
       else:
         raise Error ('No RPMs found in %s/*.log files.' % log_base)
 
-      return
+      continue
 
     log_file = os.path.join (log_base, g_args.STEP + '.log')
     rotate_log (log_file)
