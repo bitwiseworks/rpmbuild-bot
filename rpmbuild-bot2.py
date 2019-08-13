@@ -1859,8 +1859,10 @@ try:
     d = os.path.join (g_log_dir, SCRIPT_LOG_FILE)
     rotate_log (d)
     g_log = open (d, 'w', buffering = 1)
+    sys.stdout.write ('[Logging to %s]\n' % d)
   else:
     g_log = sys.stdout
+    sys.stdout.write ('[Logging to <console, redirected>]\n')
 
   g_log.write ('[%s, %s]\n' % (g_start_ts.strftime (DATETIME_FMT), ' '.join (sys.argv)))
 
