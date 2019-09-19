@@ -22,7 +22,7 @@ SCRIPT_LOG_FILE = 'rpmbuild-bot2.log'
 
 DATETIME_FMT = '%Y-%m-%d %H:%M:%S'
 
-VER_FULL_REGEX = '\d+[.\d]*-\w+[.\w]*\.\w+'
+VER_FULL_REGEX = '\d+[.\d\w]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = '[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
 
 
