@@ -1048,9 +1048,8 @@ def get_spec_archs (config, spec_base):
 # configured (TODO: Actually implement it).
 #
 
-def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir):
+def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config):
 
-  source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
   ensure_dir (source_dir)
 
   # Copy all files from aux dir but spec itself.
@@ -1061,6 +1060,107 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir):
       continue
     shutil.copy2 (ff, source_dir)
 
+  # Get legacy runtime.
+
+  legacy_key = 'specs.legacy'
+  if config.has_option (legacy_key, spec_base):
+
+    group, repo = (config.get ('general', 'legacy.repository').split (':', 1) + [None]) [:2]
+    if not group or not repo:
+      raise Error ('config', 'Invalid value for option `general:legacy.repository`')
+
+    group_config = read_group_config (group, config)
+    try:
+      repo_config = group_config ['repo.%s' % repo]
+    except KeyError:
+      raise Error ('No repository `%s` listed in configured group `%s`' % (repo, group))
+
+    rpm_list = config.getwords (legacy_key, spec_base)
+    if len (rpm_list) < 1:
+      raise Error ('config', 'No value for option `%s:%s`' % (legacy_key, spec_base));
+
+    abi_list = []
+
+    for rpm_spec in rpm_list:
+
+      try:
+        abi, name, ver, mask, legacy_arch = (rpm_spec.split ('|') + [None, None]) [:5]
+      except ValueError:
+        raise Error ('config', 'Invalid number of fields for option `%s:%s`' % (legacy_key, spec_base))
+      if '' in [abi, name, ver]:
+        raise Error ('config', 'Invalid field values for option `%s:%s`' % (legacy_key, spec_base))
+
+      if not mask:
+        mask = '*.dll'
+
+      # Add the dist suffix, if any, to ver (to make it consistent).
+      ver += g_rpm ['dist']
+
+      abi_list.append (abi)
+
+      # Enumerate RPMs for all archs and extract them.
+      log ('Getting legacy runtime (%s) for ABI ''%s''...' % (mask, abi))
+      for arch in [legacy_arch] if legacy_arch else archs:
+
+        rpm = os.path.join (repo_config ['rpm'], arch, '%s-%s.%s.rpm' % (name, ver, arch))
+        tgt_dir = os.path.join (source_dir, '%s-legacy' % spec_base, abi, arch)
+
+        # Check filenames and timestamps
+        log ('Checking package %s...' % rpm)
+        if not os.path.isfile (rpm):
+          raise Error ('File not found: %s' % rpm)
+
+        ts = os.path.getmtime (rpm)
+
+        old_ts, old_rpm, old_name, old_ver = [None, None, None, None]
+        tgt_list = tgt_dir + '.list'
+        if os.path.isfile (tgt_list):
+          with open (tgt_list, 'r') as l:
+            try:
+              old_ts, old_rpm, old_name, old_ver = l.readline ().strip ().split ('|')
+              old_ts = float (old_ts)
+            except ValueError:
+              raise Error (rpm, 'Incorrect number of fields')
+
+        if old_ts != ts or old_rpm != rpm or old_name != name or old_ver != ver:
+          log ('Extracting to %s...' % tgt_dir)
+          remove_path (tgt_list)
+          remove_path (tgt_dir)
+          ensure_dir (tgt_dir)
+          os.chdir (tgt_dir)
+          run_pipe ([[RPM2CPIO_EXE, rpm], [CPIO_EXE, '-idm', mask]])
+          # Save the file list for later use.
+          all_files = []
+          with open (tgt_dir + '.files.list', 'w') as l:
+            for root, dirs, files in os.walk (tgt_dir):
+              for f in files:
+                f = os.path.join (root [len (tgt_dir):], f)
+                all_files.append (f)
+                l.write (f + '\n')
+          # Now try to locate the debuginfo package and extract *.dbg from it.
+          debug_rpm = os.path.join (repo_config ['rpm'], arch, '%s-debuginfo-%s.%s.rpm' % (name, ver, arch))
+          have_debug_rpm = os.path.isfile (debug_rpm)
+          if not have_debug_rpm:
+            debug_rpm = os.path.join (repo_config ['rpm'], arch, '%s-debug-%s.%s.rpm' % (name, ver, arch))
+            have_debug_rpm = os.path.isfile (debug_rpm)
+          if have_debug_rpm:
+            log ('Found debug info package %s, extracting...' % debug_rpm)
+            # Save the file for later inclusion into debugfiles.list (%debug_package magic in brp-strip-os2).
+            dbgfilelist = tgt_dir + '.debugfiles.list'
+            remove_path (dbgfilelist)
+            masks = []
+            with open (dbgfilelist, 'w') as l:
+              for f in all_files:
+                f = os.path.splitext (f) [0] + '.dbg'
+                l.write (f)
+                masks.append ('*' + f)
+            run_pipe ([[RPM2CPIO_EXE, debug_rpm], [CPIO_EXE, '-idm', ' '.join (masks)]])
+          # Put the 'done' mark.
+          with open (tgt_list, 'w') as l:
+            l.write ('%s|%s|%s|%s\n'  % (ts, rpm, name, ver))
+
+        with open (os.path.join (source_dir, '%s-legacy' % spec_base, 'abi.list'), 'w') as l:
+          l.write (' '.join (abi_list) + '\n')
 
 #
 # -----------------------------------------------------------------------------
@@ -1075,10 +1175,10 @@ def build_cmd ():
     config = copy.deepcopy (g_config)
     full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
 
-    source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
-    build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
-
     archs = get_spec_archs (config, spec_base)
+    source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
+
+    build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config)
 
     log ('Targets: ' + ', '.join (archs) + ', ZIP (%s), SRPM' % archs [0])
 
