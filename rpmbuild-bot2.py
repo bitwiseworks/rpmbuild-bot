@@ -1324,11 +1324,12 @@ def test_cmd ():
     config = copy.deepcopy (g_config)
     full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
 
-    base_arch = get_spec_archs (config, spec_base) [0]
+    archs = get_spec_archs (config, spec_base)
+    base_arch = archs [0]
 
     source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
     if g_args.STEP in ['all', 'install']:
-      build_prepare (full_spec, spec_base, spec_aux_dir, source_dir)
+      build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config)
 
     log_base = os.path.join (g_log_dir, 'test', spec_base)
     if not purge:
