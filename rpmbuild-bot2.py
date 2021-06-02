@@ -1654,9 +1654,15 @@ def move_cmd ():
     # Remove the base spec's dir (only if it's empty).
     if not is_upload:
       try:
-        os.rmdir (os.path.dirname (from_log))
-      except OSError:
-        pass
+        from_log_base = os.path.dirname (from_log)
+        # On some IFSes os.rmdir will delete the directory even if it's not
+        # empty (e.g. on NDFS/WebDAV, see #5). This would eventually kill logs
+        # of other package's versions and break many bot's commands. Protect from that.
+        if len (os.listdir (from_log_base)) == 0:
+          os.rmdir (from_log_base)
+      except OSError as e:
+        if e.errno != 2:
+          raise
 
 
 #
