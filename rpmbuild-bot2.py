@@ -835,28 +835,30 @@ def read_group_config (group, config):
 
   d = dict ()
 
-  group_section = 'group.%s' % group
-  d ['base'] = config.get (group_section, 'base')
-  d ['repos'] = config.getwords (group_section, 'repositories')
+  if group:
 
-  if len (d ['repos']) == 0:
-    raise Error ('config', 'No repositories in group `%s`' % group)
+    group_section = 'group.%s' % group
+    d ['base'] = config.get (group_section, 'base')
+    d ['repos'] = config.getwords (group_section, 'repositories')
 
-  for repo in d ['repos']:
+    if len (d ['repos']) == 0:
+      raise Error ('config', 'No repositories in group `%s`' % group)
 
-    rd = dict ()
+    for repo in d ['repos']:
 
-    repo_section = 'repository.%s.%s' % (group, repo)
-    rd ['layout'] = config.get (repo_section, 'layout')
-    rd ['base'] = repo_base = os.path.join (d ['base'], config.get (repo_section, 'base'))
+      rd = dict ()
 
-    layout_section = 'layout.%s' % rd ['layout']
-    rd ['rpm'] = os.path.join (repo_base, config.get (layout_section, 'rpm'))
-    rd ['srpm'] = os.path.join (repo_base, config.get (layout_section, 'srpm'))
-    rd ['zip'] = os.path.join (repo_base, config.get (layout_section, 'zip'))
-    rd ['log'] = os.path.join (repo_base, config.get (layout_section, 'log'))
+      repo_section = 'repository.%s.%s' % (group, repo)
+      rd ['layout'] = config.get (repo_section, 'layout')
+      rd ['base'] = repo_base = os.path.join (d ['base'], config.get (repo_section, 'base'))
 
-    d ['repo.%s' % repo] = rd
+      layout_section = 'layout.%s' % rd ['layout']
+      rd ['rpm'] = os.path.join (repo_base, config.get (layout_section, 'rpm'))
+      rd ['srpm'] = os.path.join (repo_base, config.get (layout_section, 'srpm'))
+      rd ['zip'] = os.path.join (repo_base, config.get (layout_section, 'zip'))
+      rd ['log'] = os.path.join (repo_base, config.get (layout_section, 'log'))
+
+      d ['repo.%s' % repo] = rd
 
   ld = dict ()
   ld ['base'] = g_rpm ['_topdir']
@@ -1384,14 +1386,16 @@ def test_cmd ():
 #
 # -----------------------------------------------------------------------------
 #
-# Move command. Also used to implement upload.
+# Move command. Also used to implement upload and remove.
 #
 
 def move_cmd ():
 
   is_upload = g_args.COMMAND == 'upload'
+  is_remove = g_args.COMMAND == 'remove'
+  is_remove_local = is_remove and not g_args.GROUP
 
-  if not is_upload:
+  if not is_upload and not is_remove_local:
     # No need in per-spec INI loading, load them from each non-plus spec_dir instead.
     config = copy.deepcopy (g_config)
     for dirs in g_spec_dirs:
@@ -1399,7 +1403,7 @@ def move_cmd ():
 
   for spec in g_args.SPEC.split (','):
 
-    if is_upload:
+    if is_upload or is_remove_local:
        # Will use the last built version (if any).
       config = copy.deepcopy (g_config)
       full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
@@ -1414,29 +1418,40 @@ def move_cmd ():
         raise Error ('Invalid version specification: `%s`' % ver)
       spec_base = spec # Don't deal with path or ext here.
 
-    group, to_repo = (g_args.GROUP.split (':', 1) + [None]) [:2]
+    if is_remove:
+      group, to_repo = g_args.GROUP, None
+    else:
+      group, to_repo = (g_args.GROUP.split (':', 1) + [None]) [:2]
+
     from_repo = None
 
     group_config = read_group_config (group, config)
-    repos = group_config ['repos']
 
-    if not is_upload and not from_repo:
-      # Look for a summary in one of the group's repos.
-      for repo in repos:
-        from_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver, 'summary')
-        if os.path.isfile (from_summary):
-          from_repo = repo
-          break
-      if not from_repo:
-        raise Error ('No build summary for `%s` version %s in any of `%s` repositories' % (spec_base, ver, group),
-                     hint = 'Use `upload` command to upload the packages first.')
+    if not is_remove_local:
 
-    if from_repo and not from_repo in group_config ['repos']:
-      raise Error ('No repository `%s` listed in configured group `%s`' % (from_repo, group))
+      repos = group_config ['repos']
+
+      if not is_upload:
+        # Look for a summary in one of the group's repos.
+        for repo in repos:
+          from_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver, 'summary')
+          if os.path.isfile (from_summary):
+            from_repo = repo
+            break
+        if not from_repo:
+          raise Error ('No build summary for `%s` version %s in any of `%s` repositories' % (spec_base, ver, group),
+                       hint = 'Use `upload` command to upload the packages first.')
+
+      if from_repo and not from_repo in group_config ['repos']:
+        raise Error ('No repository `%s` listed in configured group `%s`' % (from_repo, group))
+
+    else:
+
+      from_summary = os.path.join (group_config ['repo.%s' % from_repo] ['log'], spec_base, 'summary')
 
     prompt = False
 
-    if not to_repo:
+    if not to_repo and not is_remove:
       # Auto-detect target repo and cause a prompt.
       prompt = True
       if from_repo:
@@ -1449,17 +1464,19 @@ def move_cmd ():
       else:
         to_repo = repos [0]
 
-    if not to_repo in repos:
-      raise Error ('No repository `%s` in configured group `%s`' % (to_repo, group))
-
-    if from_repo == to_repo:
-      raise Error ('Source and target repository are the same: `%s`' % (to_repo))
+    if not is_remove:
+      if not to_repo in repos:
+        raise Error ('No repository `%s` in configured group `%s`' % (to_repo, group))
+      if from_repo == to_repo:
+        raise Error ('Source and target repository are the same: `%s`' % (to_repo))
 
     from_repo_config = group_config ['repo.%s' % from_repo]
-    to_repo_config = group_config ['repo.%s' % to_repo]
+    if not is_remove:
+      to_repo_config = group_config ['repo.%s' % to_repo]
 
     log ('From repository : %s' % from_repo_config ['base'])
-    log ('To repository   : %s' % to_repo_config ['base'])
+    if not is_remove:
+      log ('To repository   : %s' % to_repo_config ['base'])
 
     try:
       ver_full, build_user, build_time, rpms, _ = read_build_summary (spec_base, ver, from_repo, group_config)
@@ -1467,14 +1484,20 @@ def move_cmd ():
       raise Error ('No build summary for `%s` (%s)' % (spec_base, e.summary),
                    hint = 'Use `build` command to build the packages first.')
 
-    if not is_upload and ver_full != ver:
+    if not is_upload and not is_remove_local and ver_full != ver:
       raise Error ('Requested version %s differs from version %s stored in summary' % (ver, ver_full))
 
     log ('Version         : %s' % ver_full)
     log ('Build user      : %s' % build_user)
     log ('Build time      : %s' % to_localtimestr (build_time))
 
-    if prompt:
+    if is_remove:
+      answer = log_input_warn ('Do you really want to remove this package instead of %s?\n'
+                               'This operation cannot be undone. Proceed?' %
+                               ('uploading it' if is_remove_local else 'moving it to an archive repo'), 'YN')
+      if not answer == 'Y':
+        raise CommandCancelled ()
+    elif prompt:
       answer = log_input_warn ('Target repository `%s` was auto-detected. Proceed?' % to_repo, 'YN')
       if not answer == 'Y':
         raise CommandCancelled ()
@@ -1482,39 +1505,50 @@ def move_cmd ():
     old_repo = None
     old_summary = None
 
-    to_summary = os.path.join (to_repo_config ['log'], spec_base, ver_full, 'summary')
-    if os.path.isfile (to_summary):
-      if g_args.force_command:
-        log_note ('Overwriting previous build of `%s` due to -f option.' % spec_base)
-        old_repo = to_repo
-        old_summary = to_summary
-      else:
-        raise Error ('Build summary for `%s` already exists: %s' % (spec_base, to_summary),
-                     hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
-    elif is_upload:
-      # Search for a summary in any group's repo.
-      for repo in repos:
-        maybe_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver_full, 'summary')
-        if os.path.isfile (maybe_summary):
-          if g_args.force_command:
-            log_note ('Ignoring existing build of `%s` in repository `%s` due to -f option.' % (spec_base, repo))
-            old_repo = repo
-            old_summary = maybe_summary
-          else:
-            raise Error ('Build summary for `%s` already exists in `%s`: %s' % (spec_base, repo, maybe_summary),
-                         hint = 'If recovering from a failure, use -f option to ignore this build.')
+    if is_remove:
+      old_repo = from_repo
+      old_summary = from_summary
+    else:
+      to_summary = os.path.join (to_repo_config ['log'], spec_base, ver_full, 'summary')
+      if os.path.isfile (to_summary):
+        if g_args.force_command:
+          log_note ('Overwriting previous build of `%s` due to -f option.' % spec_base)
+          old_repo = to_repo
+          old_summary = to_summary
+        else:
+          raise Error ('Build summary for `%s` already exists: %s' % (spec_base, to_summary),
+                       hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
+      elif is_upload:
+        # Search for a summary in any group's repo.
+        for repo in repos:
+          maybe_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver_full, 'summary')
+          if os.path.isfile (maybe_summary):
+            if g_args.force_command:
+              log_note ('Ignoring existing build of `%s` in repository `%s` due to -f option.' % (spec_base, repo))
+              old_repo = repo
+              old_summary = maybe_summary
+            else:
+              raise Error ('Build summary for `%s` already exists in `%s`: %s' % (spec_base, repo, maybe_summary),
+                           hint = 'If recovering from a failure, use -f option to ignore this build.')
 
-    # Attempt to clean up files from the old summary.
-    if old_repo:
-      log ('Removing old build''s packages and logs for `%s`...' % old_summary)
-      _, _, _, old_rpms, _ = read_build_summary (spec_base, ver_full, old_repo, group_config)
+    # Attempt to clean up files from the old summary (or just remove stuff for is_remove).
+    if old_repo or is_remove_local:
+      if not is_remove:
+        log ('Removing old build''s packages and logs for `%s`...' % old_summary)
+      _, _, _, old_rpms, _ = read_build_summary (spec_base, None if is_remove_local else ver_full, old_repo, group_config)
       for arch in old_rpms.keys ():
         if arch in ['srpm', 'zip']:
           f = old_rpms [arch]
+          if is_remove:
+            log ('Removing %s...' % f)
           os.remove (f)
         else:
           for f in old_rpms [arch]:
+            if is_remove:
+              log ('Removing %s...' % f)
             os.remove (f)
+      if is_remove:
+        log ('Removing logs in %s...' % os.path.dirname (old_summary))
       remove_path (os.path.dirname (old_summary))
 
     # Commit the spec file and dir.
@@ -1573,93 +1607,96 @@ def move_cmd ():
 
 
     # Copy RPMs.
+    if not is_remove:
 
-    # Check that the base dir exists just in case (note that we don't want to implicitly create it here).
-    if not os.path.isdir (group_config['base']):
-      raise Error ('%s' % group_config['base'], 'Not a directory')
+      # Check that the base dir exists just in case (note that we don't want to implicitly create it here).
+      if not os.path.isdir (group_config['base']):
+        raise Error ('%s' % group_config['base'], 'Not a directory')
 
-    rpms_to_copy = []
+      rpms_to_copy = []
 
-    for arch in rpms.keys ():
-      if arch in ['srpm', 'zip']:
-        src = rpms [arch]
-        dst = to_repo_config [arch]
-        rpms_to_copy.append ((src, dst))
-      else:
-        dst = os.path.join (to_repo_config ['rpm'], arch)
-        for src in rpms [arch]:
-          rpms_to_copy.append ((src, dst))
-
-    for src, dst in rpms_to_copy:
-      log ('Copying %s -> %s...' % (src, dst))
-      ensure_dir (dst)
-      shutil.copy2 (src, dst)
-
-    # Copy build logs and summary.
-
-    from_log = os.path.join (from_repo_config ['log'], spec_base)
-    if not is_upload:
-      from_log = os.path.join (from_log, ver_full)
-
-    zip_path = os.path.join (from_log, 'logs.zip')
-
-    if is_upload:
-      # Local build - zip all logs (otherwise they are already zipped).
-      log ('Packing logs to %s...' % zip_path)
-      zip_files = []
       for arch in rpms.keys ():
-        if arch != 'noarch':
-          zip_files.append (os.path.join (from_log, '%s.log' % arch))
-      run_pipe ([['zip', '-jy9', zip_path] + zip_files])
+        if arch in ['srpm', 'zip']:
+          src = rpms [arch]
+          dst = to_repo_config [arch]
+          rpms_to_copy.append ((src, dst))
+        else:
+          dst = os.path.join (to_repo_config ['rpm'], arch)
+          for src in rpms [arch]:
+            rpms_to_copy.append ((src, dst))
 
-    to_log = os.path.join (to_repo_config ['log'], spec_base, ver_full)
+      for src, dst in rpms_to_copy:
+        log ('Copying %s -> %s...' % (src, dst))
+        ensure_dir (dst)
+        shutil.copy2 (src, dst)
 
-    log ('Copying logs from %s -> %s...' % (from_log, to_log))
+      # Copy build logs and summary.
 
-    remove_path (to_log)
-    ensure_dir (to_log)
+      from_log = os.path.join (from_repo_config ['log'], spec_base)
+      if not is_upload:
+        from_log = os.path.join (from_log, ver_full)
 
-    logs_to_copy = [zip_path, os.path.join (from_log, 'summary')]
-    for src in logs_to_copy:
-      shutil.copy2 (src, to_log)
+      zip_path = os.path.join (from_log, 'logs.zip')
 
-    # Record the transition.
-    with open (to_summary, 'a') as f:
-      f.write ('>%s|%s@%s|%s\n' % (to_repo, g_username, g_hostname, time.time ()))
+      if is_upload:
+        # Local build - zip all logs (otherwise they are already zipped).
+        log ('Packing logs to %s...' % zip_path)
+        zip_files = []
+        for arch in rpms.keys ():
+          if arch != 'noarch':
+            zip_files.append (os.path.join (from_log, '%s.log' % arch))
+        run_pipe ([['zip', '-jy9', zip_path] + zip_files])
 
-    log ('Removing copied packages...')
+      to_log = os.path.join (to_repo_config ['log'], spec_base, ver_full)
 
-    for src, _ in rpms_to_copy:
-      os.remove (src)
+      log ('Copying logs %s -> %s...' % (from_log, to_log))
 
-    if not is_upload:
+      remove_path (to_log)
+      ensure_dir (to_log)
 
-      # Clean up remote repository.
-      log ('Removing copied logs...')
+      logs_to_copy = [zip_path, os.path.join (from_log, 'summary')]
       for src in logs_to_copy:
+        shutil.copy2 (src, to_log)
+
+      # Record the transition.
+      with open (to_summary, 'a') as f:
+        f.write ('>%s|%s@%s|%s\n' % (to_repo, g_username, g_hostname, time.time ()))
+
+      log ('Removing copied packages...')
+
+      for src, _ in rpms_to_copy:
         os.remove (src)
 
-    else:
+      if not is_upload:
 
-      # Archive local logs.
-      archive_dir = os.path.join (g_log_dir, 'archive', spec_base, ver_full)
-      log ('Archiving logs to %s...' % archive_dir)
-      remove_path (archive_dir)
-      ensure_dir (archive_dir)
-      for src in logs_to_copy:
-        shutil.move (src, archive_dir)
+        # Clean up remote repository.
+        log ('Removing copied logs...')
+        for src in logs_to_copy:
+          os.remove (src)
 
-      # Remove unpacked logs.
-      for src in zip_files:
-        os.remove (src)
+      else:
 
-    # Remove source log dir.
-    remove_path (from_log)
+        # Archive local logs.
+        archive_dir = os.path.join (g_log_dir, 'archive', spec_base, ver_full)
+        log ('Archiving logs to %s...' % archive_dir)
+        remove_path (archive_dir)
+        ensure_dir (archive_dir)
+        for src in logs_to_copy:
+          shutil.move (src, archive_dir)
+
+        # Remove unpacked logs.
+        for src in zip_files:
+          os.remove (src)
+
+      # Remove source log dir.
+      remove_path (from_log)
 
     # Remove the base spec's dir (only if it's empty).
-    if not is_upload:
+    if not is_upload and not is_remove_local:
+      if is_remove: # from_log is not set in if_remove
+        from_log = os.path.dirname (from_summary)
+      from_log_base = os.path.dirname (from_log)
       try:
-        from_log_base = os.path.dirname (from_log)
         # On some IFSes os.rmdir will delete the directory even if it's not
         # empty (e.g. on NDFS/WebDAV, see #5). This would eventually kill logs
         # of other package's versions and break many bot's commands. Protect from that.
@@ -1878,6 +1915,21 @@ VER must specify a version of the build to be moved.''',
 g_cmd_move.add_argument ('GROUP', help = 'repository group and optional repository name from INI file', metavar = 'GROUP[:REPO]')
 g_cmd_move.add_argument ('SPEC', help = 'spec name and version (comma-separated if more than one)', metavar = 'SPEC:VER')
 g_cmd_move.set_defaults (cmd = move_cmd)
+
+# Parse data for remove command.
+
+g_cmd_remove = g_cmds.add_parser ('remove',
+  help = 'remove build results locally or from repository in group', description = '''
+Removes all RPMs built from SPEC with `build` command or moved to a repository of a configured repository group
+with `upload` or `move` command.
+If GROUP is not specified, local results of `build` command will be removed and VER specification is ignored.
+Otherwise, SPEC's RPMs will be looked up in repositories of the given group and removed if found;
+VER must specify a version of the build to remove in this case.''',
+  formatter_class = g_cmdline.formatter_class)
+
+g_cmd_remove.add_argument ('GROUP', help = 'optional repository group name from INI file', metavar = 'GROUP', nargs = '?')
+g_cmd_remove.add_argument ('SPEC', help = 'spec name and version (comma-separated if more than one)', metavar = 'SPEC[:VER]')
+g_cmd_remove.set_defaults (cmd = move_cmd)
 
 # Parse data for list command.
 
