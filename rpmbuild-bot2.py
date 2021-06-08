@@ -1572,6 +1572,10 @@ def move_cmd ():
 
     # Copy RPMs.
 
+    # Check that the base dir exists just in case (note that we don't want to implicitly create it here).
+    if not os.path.isdir (group_config['base']):
+      raise Error ('%s' % group_config['base'], 'Not a directory')
+
     rpms_to_copy = []
 
     for arch in rpms.keys ():
@@ -1586,8 +1590,7 @@ def move_cmd ():
 
     for src, dst in rpms_to_copy:
       log ('Copying %s -> %s...' % (src, dst))
-      if not os.path.isdir (dst):
-        raise Error ('%s' % dst, 'Not a directory')
+      ensure_dir (dst)
       shutil.copy2 (src, dst)
 
     # Copy build logs and summary.
