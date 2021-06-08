@@ -1543,13 +1543,15 @@ def move_cmd ():
                        hint = 'Add these files with `git add` (or remove/ignore them) manually and retry.')
         # Check for modified files.
         commit_files = ['.'] if spec_dir == spec_aux_dir else [spec_file, spec_aux_dir]
-        modified = [os.path.basename (f) for f in command_output (['git', 'diff', '--name-only', '--'] + commit_files, cwd = spec_dir).splitlines ()]
+        modified = [os.path.basename (f) for f in command_output (['git', 'diff', '--cached', '--name-only', '--'] + commit_files, cwd = spec_dir).splitlines ()]
+        modified += [os.path.basename (f) for f in command_output (['git', 'diff', '--name-only', '--'] + commit_files, cwd = spec_dir).splitlines ()]
         if not spec_file in modified:
           last_spec_msg = command_output (['git', 'log', '-n', '1', '--pretty=format:%s', '--', spec_file], cwd = spec_dir).strip ()
           if last_spec_msg != commit_msg:
             raise Error ('`%s` is not modified and has a different last commit message:\n  "%s"' % (spec_file, last_spec_msg))
         if len (modified) > 0:
           # Show diffs.
+          command (['git', 'diff', '--cached', '--'] + commit_files, cwd = spec_dir)
           command (['git', 'diff', '--'] + commit_files, cwd = spec_dir)
           # Confirm diffs.
           answer = log_input ('Type YES if the diff is okay to be committed.')
