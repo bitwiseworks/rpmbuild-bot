@@ -84,7 +84,7 @@ class Config (ConfigParser.SafeConfigParser):
         try:
           if f_section == 'ENV:':
             sub = os.environ.get (f_option)
-            if not sub: raise ConfigParser.NoOptionError, (f_option, f_section [:-1])
+            if not sub: raise ConfigParser.NoOptionError (f_option, f_section [:-1])
           elif f_section == 'SHELL:':
             sub = shell_output (f_option).strip ()
           elif f_section == 'RPM:':
