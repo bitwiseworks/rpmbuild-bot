@@ -1835,6 +1835,11 @@ def info_cmd ():
 # Main
 #
 
+# Fix slashes in common environment vars to ensure backslashes won't slip in
+# (which is generally bad because of escaping hell when passing them around).
+for v in ['HOME', 'TMP', 'TEMP', 'TMPDIR', 'PATH']:
+  os.environ [v] = os.environ [v].replace ('\\', '/')
+
 # Script's start timestamp.
 g_start_ts = datetime.datetime.now ()
 
