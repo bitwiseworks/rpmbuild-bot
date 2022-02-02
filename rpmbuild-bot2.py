@@ -26,7 +26,7 @@ VER_FULL_REGEX = '\d+[.\d\w]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = '[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
 
 
-import sys, os, re, copy, argparse, ConfigParser, subprocess, datetime, traceback, shutil, time, fnmatch, textwrap
+import sys, os, re, copy, argparse, configparser, subprocess, datetime, traceback, shutil, time, fnmatch, textwrap
 import getpass, socket # for user and hostname
 
 
@@ -43,18 +43,21 @@ import getpass, socket # for user and hostname
 #   of the <NAME> environment variable.
 # - Support for `${SHELL:<COMMAND>}` interpolation that is replaced with the
 #   standard output of <COMMAND> run by the shell.
-# - Support for `${RPM:<NAME>}` interpolation that is replaced with the value
-#   of the <NAME> RPM macro.
+# - Support for `${RPM:<NAME>}` interpolation that is replaced with the value of
+#   the <NAME> RPM macro.
 # - Support for copy.deepcopy.
 #
+# Note: We leave this class in even for Python 3 because of the extensions we
+# provide.
+#
 
-class Config (ConfigParser.SafeConfigParser):
+class Config (configparser.ConfigParser):
 
   def __init__ (self, rpm_macros, *args, **kwargs):
 
     self.get_depth = 0
     self.rpm_macros = rpm_macros
-    ConfigParser.SafeConfigParser.__init__ (self, *args, **kwargs)
+    configparser.ConfigParser.__init__ (self, *args, **kwargs)
 
     # Keep option names case-sensitive (vital for 'environment' section).
     self.optionxform = str
@@ -69,22 +72,22 @@ class Config (ConfigParser.SafeConfigParser):
         copy.set (s, n, v)
     return copy
 
-  def get (self, section, option = None, raw = False, vars = None):
+  def get (self, section, option = None, *, raw = False, vars = None, fallback = None):
 
     if not option:
       section, option = section.split (':')
 
-    ret = ConfigParser.SafeConfigParser.get (self, section, option, True, vars)
+    ret = super ().get (section, option, raw = True, vars = vars, fallback = fallback)
     if raw:
       return ret
 
     for f_section, f_option in re.findall (r'\$\{(\w+:)?((?<=SHELL:).+|\w+)\}', ret):
       self.get_depth = self.get_depth + 1
-      if self.get_depth < ConfigParser.MAX_INTERPOLATION_DEPTH:
+      if self.get_depth < configparser.MAX_INTERPOLATION_DEPTH:
         try:
           if f_section == 'ENV:':
             sub = os.environ.get (f_option)
-            if not sub: raise ConfigParser.NoOptionError (f_option, f_section [:-1])
+            if not sub: raise configparser.NoOptionError (f_option, f_section [:-1])
           elif f_section == 'SHELL:':
             sub = shell_output (f_option).strip ()
           elif f_section == 'RPM:':
@@ -97,16 +100,16 @@ class Config (ConfigParser.SafeConfigParser):
             sub = self.get (f_section [:-1] or section, f_option, vars = vars)
           ret = ret.replace ('${{{0}{1}}}'.format (f_section, f_option), sub)
         except RunError as e:
-          raise ConfigParser.InterpolationError (section, option,
+          raise configparser.InterpolationError (section, option,
             'Failed to interpolate ${%s%s}:\nThe following command failed with: %s:\n  %s' % (f_section, f_option, e.msg, e.cmd))
       else:
-        raise ConfigParser.InterpolationDepthError (option, section, ret)
+        raise configparser.InterpolationDepthError (option, section, ret)
 
     self.get_depth = self.get_depth - 1
     return ret
 
   def getlist (self, section, option = None, sep = None):
-    return filter (None, self.get (section, option).split (sep))
+    return [v for v in self.get (section, option).split (sep) if v]
 
   def getlines (self, section, option = None): return self.getlist (section, option, '\n')
 
@@ -260,7 +263,7 @@ def log_input (prompt, choice = None, kind = None):
 
   try:
     while True:
-      answer = raw_input ('%s%s %s' % (kind_str, prompt, choice_str))
+      answer = input ('%s%s %s' % (kind_str, prompt, choice_str))
       answer_upper = answer.upper ()
       answer_empty = answer == ''
       if not choice or (not answer_empty and not answer_upper == choice_upper and answer_upper in choice_upper):
@@ -350,7 +353,7 @@ def remove_path (path, relaxed = False):
 def command_output (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env)
+      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env, text = True)
   except subprocess.CalledProcessError as e:
     raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
@@ -374,7 +377,7 @@ def command_output (command, cwd = None):
 def shell_output (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, shell = True, cwd = cwd, env = g_run_env)
+      return subprocess.check_output (command, shell = True, cwd = cwd, env = g_run_env, text = True)
   except subprocess.CalledProcessError as e:
     raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
   except OSError as e:
@@ -406,7 +409,7 @@ def command_output_rc (command, cwd = None):
 def shell_output_rc (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, shell = True, cwd = cwd, env = g_run_env), 0
+      return subprocess.check_output (command, stderr = FNULL, shell = True, cwd = cwd, env = g_run_env, text = True), 0
   except subprocess.CalledProcessError as e:
     return e.output, e.returncode
 
@@ -1974,6 +1977,8 @@ g_config = Config (g_rpm)
 # List of lists, SCRIPT_INI_FILE in the 1st dir of each nested list is subject to loading.
 g_spec_dirs = []
 
+rc = 255
+
 try:
 
   # Detect user and hostname.
@@ -1990,7 +1995,7 @@ try:
 
   try:
     with open (g_main_ini_path, 'r') as f:
-      g_config.readfp (f)
+      g_config.read_file (f)
   except (IOError, OSError) as e:
     raise Error ('Cannot read configuration from `%s`:\n%s' % (g_main_ini_path, str (e)))
 
@@ -2039,7 +2044,7 @@ try:
 
   g_args.cmd ()
 
-except (ConfigParser.NoSectionError, ConfigParser.NoOptionError, ConfigParser.InterpolationError) as e:
+except (configparser.NoSectionError, configparser.NoOptionError, configparser.InterpolationError) as e:
 
   log_err ('config', str (e))
   log_hint ('Check `%s` or spec-specific INI files' % g_main_ini_path)
