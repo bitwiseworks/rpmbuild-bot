@@ -519,10 +519,10 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
     if len (commands) == 1:
 
       if capture_output:
-        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd, env = g_run_env)
+        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = subprocess.STDOUT, text = True, cwd = cwd, env = g_run_env)
         capture_file = proc.stdout
       else:
-        proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, bufsize = 1, cwd = cwd, env = g_run_env)
+        proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, text = True, cwd = cwd, env = g_run_env)
 
     else:
 
