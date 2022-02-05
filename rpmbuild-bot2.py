@@ -72,12 +72,12 @@ class Config (configparser.ConfigParser):
         copy.set (s, n, v)
     return copy
 
-  def get (self, section, option = None, *, raw = False, vars = None, fallback = None):
+  def get (self, section, option = None, *, raw = False, vars = None, **kwargs):
 
     if not option:
       section, option = section.split (':')
 
-    ret = super ().get (section, option, raw = True, vars = vars, fallback = fallback)
+    ret = super ().get (section, option, raw = True, vars = vars, **kwargs)
     if raw:
       return ret
 
