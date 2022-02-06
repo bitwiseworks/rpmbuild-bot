@@ -394,7 +394,7 @@ def shell_output (command, cwd = None):
 def command_output_rc (command, cwd = None):
   try:
     with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env), 0
+      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env, text = True), 0
   except subprocess.CalledProcessError as e:
     return e.output, e.returncode
 
