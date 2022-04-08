@@ -193,7 +193,7 @@ def log (msg, wrap_width = None, file_only = False):
     g_output_file.write (msg)
 
     # Note: obey log_to_console only if the console is not redirected to a file.
-    if g_args.log_to_console and g_log != sys.stdout and not file_only:
+    if g_args.log_to_console and g_output_file != sys.stdout and not file_only:
       sys.stdout.write (msg)
 
   else:
@@ -509,9 +509,8 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
   # Note: obey log_to_console only if the console is not redirected to a file.
   # Also makes no sense to capture if file equals to sys.stdout (unless regex
   # is given). If file is None, we have to capture to hide any output at all.
-  duplicate_output = g_args.log_to_console and g_log != sys.stdout and file != sys.stdout
-  capture_output = duplicate_output or recomp or not file
-
+  duplicate_output = g_args.log_to_console and file != sys.stdout
+  capture_output = duplicate_output or bool (recomp) or not file
   try:
 
     cmd = commands [0]
