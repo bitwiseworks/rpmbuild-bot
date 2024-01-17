@@ -1253,7 +1253,8 @@ def build_cmd ():
     srpm_base = os.path.basename (srpm)
     spec_ver = re.match (r'(%s)-(%s)\.src\.rpm' % (spec_base, VER_FULL_REGEX), srpm_base)
     if not spec_ver or spec_ver.lastindex != 2:
-      raise Error ('Cannot deduce package version from `%s` with spec_base `%s`' % (srpm, spec_base))
+      raise Error ('Cannot deduce package version from `%s` with spec_base `%s`' % (srpm, spec_base),
+                   hint = 'Check that Release value ends with %{?dist} macro in `%s`.spec' % spec_base)
 
     srpm_name = spec_ver.group (1)
     ver_full = spec_ver.group (2)
