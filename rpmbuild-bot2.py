@@ -1158,7 +1158,7 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
                 f = os.path.splitext (f) [0] + '.dbg'
                 l.write (f + '\n')
                 masks.append ('*' + f)
-            run_pipe ([[RPM2CPIO_EXE, debug_rpm], [CPIO_EXE, '-idm', ' '.join (masks)]])
+            run_pipe ([[RPM2CPIO_EXE, debug_rpm], [CPIO_EXE, '-idm'] + masks])
           # Put the 'done' mark.
           with open (tgt_list, 'w') as l:
             l.write ('%s|%s|%s|%s\n'  % (ts, rpm, name, ver))
