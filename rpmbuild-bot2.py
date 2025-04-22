@@ -1043,6 +1043,22 @@ def get_spec_archs (config, spec_base):
 #
 # -----------------------------------------------------------------------------
 #
+# Get the base arch for spec.
+#
+
+def get_basespec_arch (config, spec_base):
+
+  base_arch = None
+  archs = get_spec_archs (config, spec_base)
+  for arch in archs:
+    if not base_arch:
+      base_arch = arch
+      break
+  return base_arch
+
+#
+# -----------------------------------------------------------------------------
+#
 # Prepare for build and test commands. This includes the following:
 #
 # - Copy files from spec_aux_dir to source_dir (to be used as an override for
@@ -1648,6 +1664,9 @@ def move_cmd ():
         for arch in rpms.keys ():
           if arch != 'noarch':
             zip_files.append (os.path.join (from_log, '%s.log' % arch))
+          else:
+            base_arch = get_basespec_arch(config, spec_base)
+            zip_files.append (os.path.join (from_log, '%s.log' % base_arch))
         run_pipe ([['zip', '-jy9', zip_path] + zip_files])
 
       to_log = os.path.join (to_repo_config ['log'], spec_base, ver_full)
