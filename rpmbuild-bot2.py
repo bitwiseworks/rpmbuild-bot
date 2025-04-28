@@ -1708,7 +1708,8 @@ def move_cmd ():
 
         # Remove unpacked logs.
         for src in zip_files:
-          os.remove (src)
+          if os.path.exists(src):
+            os.remove (src)
 
       # Remove source log dir.
       remove_path (from_log)
