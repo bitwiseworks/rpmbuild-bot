@@ -286,12 +286,20 @@ def rotate_log (log_file):
 
   if os.path.exists (log_file):
 
-    try: os.remove (log_file + '.bak')
-    except OSError: pass
+    bak_file = log_file + '.bak'
 
-    try: os.rename (log_file, log_file + '.bak')
+    if os.path.exists (bak_file):
+      os.remove (bak_file)
+
+    try:
+      os.rename (log_file, bak_file)
     except OSError as e:
-      raise Error ('Cannot rename `%(log_file)s` to `.bak`: %(e)s' % locals ())
+      # The file may be open, try to copy + truncate
+      try:
+        shutil.copyfile (log_file, bak_file)
+        os.truncate (log_file, 0)
+      except OSError:
+        raise Error ('Cannot rename `%(log_file)s` to `.bak`: %(e)s' % locals ())
 
 #
 # -----------------------------------------------------------------------------
