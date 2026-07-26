@@ -26,9 +26,21 @@ VER_FULL_REGEX = r'\d+[.\d\w]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = r'[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
 
 
-import sys, os, re, copy, argparse, configparser, subprocess, datetime, traceback, shutil, time, fnmatch, textwrap
-import getpass, socket # for user and hostname
-
+import argparse
+import configparser
+import copy
+import datetime
+import fnmatch
+import getpass  # for user and hostname
+import os
+import re
+import shutil
+import socket  # for user and hostname
+import subprocess
+import sys
+import textwrap
+import time
+import traceback
 
 #
 # -----------------------------------------------------------------------------
@@ -92,16 +104,16 @@ class Config (configparser.ConfigParser):
             sub = shell_output (f_option).strip ()
           elif f_section == 'RPM:':
             if f_option not in self.rpm_macros:
-              sub = command_output ([RPMBUILD_EXE, '--eval', '%%{?%s}' % f_option]).strip ()
+              sub = command_output ([RPMBUILD_EXE, '--eval', f'%{{?{f_option}}}']).strip ()
               self.rpm_macros [f_option] = sub
             else:
               sub = self.rpm_macros [f_option]
           else:
             sub = self.get (f_section [:-1] or section, f_option, vars = vars)
-          ret = ret.replace ('${{{0}{1}}}'.format (f_section, f_option), sub)
+          ret = ret.replace (f'${{{f_section}{f_option}}}', sub)
         except RunError as e:
           raise configparser.InterpolationError (section, option,
-            'Failed to interpolate ${%s%s}:\nThe following command failed with: %s:\n  %s' % (f_section, f_option, e.msg, e.cmd))
+            f'Failed to interpolate ${{{f_section}{f_option}}}:\nThe following command failed with: {e.msg}:\n  {e.cmd}')
       else:
         raise configparser.InterpolationDepthError (option, section, ret)
 
@@ -180,7 +192,7 @@ def to_unixtimestr (unix_time):
 
 def log (msg, wrap_width = None, file_only = False):
 
-  if not wrap_width == None:
+  if wrap_width != None:
     if int (wrap_width) <= 0:
       wrap_width = 79
     msg = textwrap.fill (msg, wrap_width)
@@ -226,7 +238,7 @@ def log_kind (kind, prefix, msg = None, **kwargs):
     kind = '\n' + kind
     msg = msg [1:]
 
-  log ('%s: ' % kind + (prefix and prefix + ': ' or '') + msg, **kwargs)
+  log (f'{kind}: ' + (prefix and prefix + ': ' or '') + msg, **kwargs)
 
 
 def log_err (prefix, msg = None, **kwargs):
@@ -258,16 +270,16 @@ def log_input (prompt, choice = None, kind = None):
 
   choice_upper = choice.upper () if choice else None
 
-  kind_str = '' if not kind else '%s: ' % kind
-  choice_str = '' if not choice else '[%s] ' % choice
+  kind_str = '' if not kind else f'{kind}: '
+  choice_str = '' if not choice else f'[{choice}] '
 
   try:
     while True:
-      answer = input ('%s%s %s' % (kind_str, prompt, choice_str))
+      answer = input (f'{kind_str}{prompt} {choice_str}')
       answer_upper = answer.upper ()
       answer_empty = answer == ''
-      if not choice or (not answer_empty and not answer_upper == choice_upper and answer_upper in choice_upper):
-        log ('%s%s %s%s' % (kind_str, prompt, choice_str, answer), file_only = True)
+      if not choice or (not answer_empty and answer_upper != choice_upper and answer_upper in choice_upper):
+        log (f'{kind_str}{prompt} {choice_str}{answer}', file_only = True)
         return answer_upper
   except KeyboardInterrupt:
     return None
@@ -299,7 +311,7 @@ def rotate_log (log_file):
         shutil.copyfile (log_file, bak_file)
         os.truncate (log_file, 0)
       except OSError:
-        raise Error ('Cannot rename `%(log_file)s` to `.bak`: %(e)s' % locals ())
+        raise Error (f'Cannot rename `{log_file}` to `.bak`: {e}')
 
 #
 # -----------------------------------------------------------------------------
@@ -313,7 +325,7 @@ def ensure_dir (path):
     if not os.path.isdir (path):
       os.makedirs (path)
   except OSError as e:
-    raise Error ('Cannot create directory `%(path)s`: %(e)s' % locals ())
+    raise Error (f'Cannot create directory `{path}`: {e}')
 
 
 #
@@ -360,10 +372,10 @@ def remove_path (path, relaxed = False):
 
 def command_output (command, cwd = None):
   try:
-    with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env, text = True)
+    with open (os.devnull, 'w') as fNull:
+      return subprocess.check_output (command, stderr = fNull, cwd = cwd, env = g_run_env, text = True)
   except subprocess.CalledProcessError as e:
-    raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
+    raise RunError (' '.join (command), f'Non-zero exit status {e.returncode}')
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -384,10 +396,10 @@ def command_output (command, cwd = None):
 
 def shell_output (command, cwd = None):
   try:
-    with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, shell = True, cwd = cwd, env = g_run_env, text = True)
+    with open (os.devnull, 'w') as fNull:
+      return subprocess.check_output (command, stderr = fNull, shell = True, cwd = cwd, env = g_run_env, text = True)
   except subprocess.CalledProcessError as e:
-    raise RunError (' '.join (command), 'Non-zero exit status %s' % str (e.returncode))
+    raise RunError (' '.join (command), f'Non-zero exit status {e.returncode}')
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -401,8 +413,8 @@ def shell_output (command, cwd = None):
 
 def command_output_rc (command, cwd = None):
   try:
-    with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, cwd = cwd, env = g_run_env, text = True), 0
+    with open (os.devnull, 'w') as fNull:
+      return subprocess.check_output (command, stderr = fNull, cwd = cwd, env = g_run_env, text = True), 0
   except subprocess.CalledProcessError as e:
     return e.output, e.returncode
 
@@ -416,8 +428,8 @@ def command_output_rc (command, cwd = None):
 
 def shell_output_rc (command, cwd = None):
   try:
-    with open(os.devnull, 'w') as FNULL:
-      return subprocess.check_output (command, stderr = FNULL, shell = True, cwd = cwd, env = g_run_env, text = True), 0
+    with open (os.devnull, 'w') as fNull:
+      return subprocess.check_output (command, stderr = fNull, shell = True, cwd = cwd, env = g_run_env, text = True), 0
   except subprocess.CalledProcessError as e:
     return e.output, e.returncode
 
@@ -431,8 +443,8 @@ def shell_output_rc (command, cwd = None):
 
 def command_rc (command, cwd = None):
   try:
-    with open(os.devnull, 'w') as FNULL:
-      return subprocess.call (command, stdout = FNULL, stderr = FNULL, cwd = cwd, env = g_run_env)
+    with open (os.devnull, 'w') as fNull:
+      return subprocess.call (command, stdout = fNull, stderr = fNull, cwd = cwd, env = g_run_env)
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -446,8 +458,8 @@ def command_rc (command, cwd = None):
 
 def shell_rc (command, cwd = None):
   try:
-    with open(os.devnull, 'w') as FNULL:
-      return subprocess.call (command, stdout = FNULL, stderr = FNULL, shell = True, cwd = cwd, env = g_run_env)
+    with open (os.devnull, 'w') as fNull:
+      return subprocess.call (command, stdout = fNull, stderr = fNull, shell = True, cwd = cwd, env = g_run_env)
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -462,10 +474,10 @@ def shell_rc (command, cwd = None):
 def command (command, cwd = None):
   command_str = ' '.join (command)
   try:
-    log ('Running `%s`...' % command_str)
+    log (f'Running `{command_str}`...')
     subprocess.check_call (command, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
-    raise RunError (command_str, 'Non-zero exit status %s' % str (e.returncode))
+    raise RunError (command_str, f'Non-zero exit status {e.returncode}')
   except OSError as e:
     raise RunError (command_str, str (e))
 
@@ -480,10 +492,10 @@ def command (command, cwd = None):
 def shell (command, cwd = None):
   command_str = ' '.join (command)
   try:
-    log ('Running [%s]...' % command_str)
+    log (f'Running [{command_str}]...')
     subprocess.check_call (command, shell = True, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
-    raise RunError (command_str, 'Non-zero exit status %s' % str (e.returncode))
+    raise RunError (command_str, f'Non-zero exit status {e.returncode}')
   except OSError as e:
     raise RunError (command_str, str (e))
 
@@ -569,12 +581,12 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
       rc = last_proc.wait ()
 
     rc = proc.wait ()
-    msg = 'exit code %d' % rc
+    msg = f'exit code {rc}'
 
   except OSError as e:
 
     rc = 1
-    msg = 'error %d (%s)' % (e.errno, e.strerror)
+    msg = f'error {e.errno} {e.strerror}'
 
   finally:
 
@@ -605,8 +617,8 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
 
   with open (log_file, 'w', buffering = 1) as f:
 
-    start_ts = datetime.datetime.now ()
-    f.write ('[%s, %s]\n' % (start_ts.strftime (DATETIME_FMT), ' | '.join (' '.join(c) for c in commands)))
+    start_ts = datetime.datetime.now ().astimezone ()
+    f.write (f'[{start_ts.strftime (DATETIME_FMT)}, {' | '.join (' '.join(c) for c in commands)}]\n')
 
     try:
 
@@ -622,9 +634,9 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
 
     finally:
 
-      end_ts = datetime.datetime.now ()
+      end_ts = datetime.datetime.now ().astimezone ()
       elapsed = str (end_ts - start_ts).rstrip ('0')
-      f.write ('[%s, %s, %s s]\n' % (end_ts.strftime (DATETIME_FMT), msg, elapsed))
+      f.write (f'[{end_ts.strftime (DATETIME_FMT)}, {msg}, {elapsed} s]\n')
 
       if rc:
         raise RunError (cmd, msg, log_file = log_file)
@@ -654,8 +666,8 @@ def func_log (log_file, func):
 
   with open (log_file, 'w', buffering = 1) as f:
 
-    start_ts = datetime.datetime.now ()
-    f.write ('[%s, Python %s]\n' % (start_ts.strftime (DATETIME_FMT), str (func)))
+    start_ts = datetime.datetime.now ().astimezone ()
+    f.write (f'[{start_ts.strftime (DATETIME_FMT)}, Python {func!s}]\n')
 
     try:
 
@@ -664,17 +676,17 @@ def func_log (log_file, func):
       g_output_file = f
 
       rc = func () or 0
-      msg = 'return code %d' % rc
+      msg = f'return code {rc}'
 
     except RunError as e:
 
       rc = 1
-      f.write ('%s: %s\n' % (e.cmd, e.msg))
+      f.write (f'{e.cmd}: {e.msg}\n')
 
-    except:
+    except:  # noqa: E722 (we log below)
 
       rc = 1
-      f.write ('Unexpected exception occured:\n%s' % traceback.format_exc ())
+      f.write (f'Unexpected exception occurred:\n{traceback.format_exc ()}')
 
     finally:
 
@@ -683,9 +695,9 @@ def func_log (log_file, func):
       if rc:
         msg = 'exception ' + sys.exc_type.__name__
 
-      end_ts = datetime.datetime.now ()
+      end_ts = datetime.datetime.now ().astimezone ()
       elapsed = str (end_ts - start_ts).rstrip ('0')
-      f.write ('[%s, %s, %s s]\n' % (end_ts.strftime (DATETIME_FMT), msg, elapsed))
+      f.write (f'[{end_ts.strftime (DATETIME_FMT)}, {msg}, {elapsed} s]\n')
 
       if rc:
         raise RunError (str (func), msg, log_file = log_file)
@@ -761,7 +773,7 @@ def resolve_spec (spec, spec_dirs, config):
       for dirs in spec_dirs:
         for d in dirs:
           if os.path.samefile (d, full_spec_dir) or \
-             os.path.samefile (os.path.join (d, spec_base), full_spec_dir):
+            os.path.samefile (os.path.join (d, spec_base), full_spec_dir):
             found = 2
             break
         else:
@@ -801,16 +813,16 @@ def resolve_spec (spec, spec_dirs, config):
 
   if (found == 0):
     if dir:
-      raise Error ('Cannot find `%s`' % spec)
+      raise Error (f'Cannot find `{spec}`')
     else:
-      raise Error ('Cannot find `%s` in %s' % (spec, spec_dirs))
+      raise Error (f'Cannot find `{spec}` in {spec_dirs}')
 
-  log ('Spec file       : %s' % full_spec)
-  log ('Spec source dir : %s' % spec_aux_dir)
+  log (f'Spec file       : {full_spec}')
+  log (f'Spec source dir : {spec_aux_dir}')
 
   # Validate some mandatory config options.
   if not config.get ('general:archs'):
-    raise Error ('config', 'No value for option `general:archs`');
+    raise Error ('config', 'No value for option `general:archs`')
 
   # Load the environment.
   g_run_env = copy.deepcopy (os.environ)
@@ -843,41 +855,41 @@ def resolve_spec (spec, spec_dirs, config):
 
 def read_group_config (group, config):
 
-  d = dict ()
+  d = {}
 
   if group:
 
-    group_section = 'group.%s' % group
+    group_section = f'group.{group}'
     d ['base'] = config.get (group_section, 'base')
     d ['repos'] = config.getwords (group_section, 'repositories')
 
     if len (d ['repos']) == 0:
-      raise Error ('config', 'No repositories in group `%s`' % group)
+      raise Error ('config', f'No repositories in group `{group}`')
 
     for repo in d ['repos']:
 
-      rd = dict ()
+      rd = {}
 
-      repo_section = 'repository.%s.%s' % (group, repo)
+      repo_section = f'repository.{group}.{repo}'
       rd ['layout'] = config.get (repo_section, 'layout')
       rd ['base'] = repo_base = os.path.join (d ['base'], config.get (repo_section, 'base'))
 
-      layout_section = 'layout.%s' % rd ['layout']
+      layout_section = f'layout.{rd ['layout']}'
       rd ['rpm'] = os.path.join (repo_base, config.get (layout_section, 'rpm'))
       rd ['srpm'] = os.path.join (repo_base, config.get (layout_section, 'srpm'))
       rd ['zip'] = os.path.join (repo_base, config.get (layout_section, 'zip'))
       rd ['log'] = os.path.join (repo_base, config.get (layout_section, 'log'))
 
-      d ['repo.%s' % repo] = rd
+      d [f'repo.{repo}'] = rd
 
-  ld = dict ()
+  ld = {}
   ld ['base'] = g_rpm ['_topdir']
   ld ['rpm'] = g_rpm ['_rpmdir']
   ld ['srpm'] = g_rpm ['_srcrpmdir']
   ld ['zip'] = g_zip_dir
   ld ['log'] = os.path.join (g_log_dir, 'build')
 
-  d ['repo.%s' % None] = ld
+  d [f'repo.{None}'] = ld
 
   return d
 
@@ -894,9 +906,9 @@ def read_group_config (group, config):
 def resolve_path (name, arch, repo = None, group_config = None):
 
   if arch in ['srpm', 'zip']:
-    path = os.path.join (group_config ['repo.%s' % repo] [arch], name)
+    path = os.path.join (group_config [f'repo.{repo}'] [arch], name)
   else:
-    path = os.path.join (group_config ['repo.%s' % repo] ['rpm'], arch, name)
+    path = os.path.join (group_config [f'repo.{repo}'] ['rpm'], arch, name)
 
   return path
 
@@ -948,7 +960,7 @@ class NoBuildSummary (BaseException):
 
 def read_build_summary (spec_base, ver, repo, group_config):
 
-  log_base = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base)
+  log_base = os.path.join (group_config [f'repo.{repo}'] ['log'], spec_base)
 
   if ver:
     log_base = os.path.join (log_base, ver)
@@ -962,16 +974,16 @@ def read_build_summary (spec_base, ver, repo, group_config):
 
         ln = 1
         ver_full = f.readline ().strip ()
-        if not re.match (r'^%s$' % VER_FULL_REGEX, ver_full):
-          raise Error ('Invalid version specification: `%s`' % ver_full)
+        if not re.match (rf'^{VER_FULL_REGEX}$', ver_full):
+          raise Error (f'Invalid version specification: `{ver_full}`')
 
         ln = 2
         build_user, build_time = f.readline ().strip ().split ('|')
-        if not re.match (r'^%s$' % BUILD_USER_REGEX, build_user):
-          raise Error ('Invalid build user specification: `%s`' % build_user)
+        if not re.match (rf'^{BUILD_USER_REGEX}$', build_user):
+          raise Error (f'Invalid build user specification: `{build_user}`')
         build_time = float (build_time)
 
-        rpms = dict ()
+        rpms = {}
         hist = []
 
         for line in f:
@@ -991,9 +1003,9 @@ def read_build_summary (spec_base, ver, repo, group_config):
           path = resolve_path (name, arch, repo, group_config)
 
           if os.path.getmtime (path) != mtime:
-            raise Error ('%s:%s' % (summary, ln), 'Recorded mtime differs from actual for `%s`' % path)
+            raise Error (f'{summary}:{ln}', f'Recorded mtime differs from actual for `{path}`')
           if os.path.getsize (path) != size:
-            raise Error ('%s:%s' % (summary, ln), 'Recorded size differs from actual for `%s`' % path)
+            raise Error (f'{summary}:{ln}', f'Recorded size differs from actual for `{path}`')
 
           if arch in ['srpm', 'zip']:
             rpms [arch] = path
@@ -1003,19 +1015,19 @@ def read_build_summary (spec_base, ver, repo, group_config):
             else:
               rpms [arch] = [path]
 
-      except (IOError, OSError) as e:
-        raise Error ('%s:%s:\n%s' % (summary, ln, str (e)))
+      except OSError as e:
+        raise Error (f'{summary}:{ln}:\n{e}')
 
       except ValueError:
-        raise Error ('%s:%s' % (summary, ln), 'Invalid field type or number of fields')
+        raise Error (f'{summary}:{ln}', 'Invalid field type or number of fields')
 
     return ver_full, build_user, build_time, rpms, hist
 
-  except IOError as e:
+  except OSError as e:
     if e.errno == 2:
       raise NoBuildSummary (summary)
     else:
-      raise Error ('Cannot read build summary for `%s`:\n%s' % (spec_base, str (e)))
+      raise Error (f'Cannot read build summary for `{spec_base}`:\n{e}')
 
 
 #
@@ -1042,7 +1054,7 @@ def get_spec_archs (config, spec_base):
   if config.has_option (key, spec_base):
     archs = config.getwords (key, spec_base)
     if len (archs) < 1:
-      raise Error ('config', 'No value for option `%s:%s`' % (key, spec_base));
+      raise Error ('config', f'No value for option `{key}:{spec_base}`');
     return archs
 
   return config.getwords ('general:archs')
@@ -1099,13 +1111,13 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
 
     group_config = read_group_config (group, config)
     try:
-      repo_config = group_config ['repo.%s' % repo]
+      repo_config = group_config [f'repo.{repo}']
     except KeyError:
-      raise Error ('No repository `%s` listed in configured group `%s`' % (repo, group))
+      raise Error (f'No repository `{repo}` listed in configured group `{group}`')
 
     rpm_list = config.getwords (legacy_key, spec_base)
     if len (rpm_list) < 1:
-      raise Error ('config', 'No value for option `%s:%s`' % (legacy_key, spec_base));
+      raise Error ('config', f'No value for option `{legacy_key}:{spec_base}`');
 
     abi_list = []
 
@@ -1114,9 +1126,9 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
       try:
         abi, name, ver, mask, legacy_arch = (rpm_spec.split ('|') + [None, None]) [:5]
       except ValueError:
-        raise Error ('config', 'Invalid number of fields for option `%s:%s`' % (legacy_key, spec_base))
+        raise Error ('config', f'Invalid number of fields for option `{legacy_key}:{spec_base}`')
       if '' in [abi, name, ver]:
-        raise Error ('config', 'Invalid field values for option `%s:%s`' % (legacy_key, spec_base))
+        raise Error ('config', f'Invalid field values for option `{legacy_key}:{spec_base}`')
 
       if not mask:
         mask = '*.dll'
@@ -1127,16 +1139,16 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
       abi_list.append (abi)
 
       # Enumerate RPMs for all archs and extract them.
-      log ('Getting legacy runtime (%s) for ABI ''%s''...' % (mask, abi))
+      log (f'Getting legacy runtime ({mask}) for ABI {abi}...')
       for arch in [legacy_arch] if legacy_arch else archs:
 
-        rpm = os.path.join (repo_config ['rpm'], arch, '%s-%s.%s.rpm' % (name, ver, arch))
-        tgt_dir = os.path.join (source_dir, '%s-legacy' % spec_base, abi, arch)
+        rpm = os.path.join (repo_config ['rpm'], arch, f'{name}-{ver}.{arch}.rpm')
+        tgt_dir = os.path.join (source_dir, f'{spec_base}-legacy', abi, arch)
 
         # Check filenames and timestamps
-        log ('Checking package %s...' % rpm)
+        log (f'Checking package {rpm}...')
         if not os.path.isfile (rpm):
-          raise Error ('File not found: %s' % rpm)
+          raise Error (f'File not found: {rpm}')
 
         ts = os.path.getmtime (rpm)
 
@@ -1151,7 +1163,7 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
               raise Error (rpm, 'Incorrect number of fields')
 
         if old_ts != ts or old_rpm != rpm or old_name != name or old_ver != ver:
-          log ('Extracting to %s...' % tgt_dir)
+          log (f'Extracting to {tgt_dir}...')
           remove_path (tgt_list)
           remove_path (tgt_dir)
           ensure_dir (tgt_dir)
@@ -1166,13 +1178,13 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
                 all_files.append (f)
                 l.write (f + '\n')
           # Now try to locate the debuginfo package and extract *.dbg from it.
-          debug_rpm = os.path.join (repo_config ['rpm'], arch, '%s-debuginfo-%s.%s.rpm' % (name, ver, arch))
+          debug_rpm = os.path.join (repo_config ['rpm'], arch, f'{name}-debuginfo-{ver}.{arch}.rpm')
           have_debug_rpm = os.path.isfile (debug_rpm)
           if not have_debug_rpm:
-            debug_rpm = os.path.join (repo_config ['rpm'], arch, '%s-debug-%s.%s.rpm' % (name, ver, arch))
+            debug_rpm = os.path.join (repo_config ['rpm'], arch, f'{name}-debug-{ver}.{arch}.rpm')
             have_debug_rpm = os.path.isfile (debug_rpm)
           if have_debug_rpm:
-            log ('Found debug info package %s, extracting...' % debug_rpm)
+            log (f'Found debug info package {debug_rpm}, extracting...')
             # Save the file for later inclusion into debugfiles.list (%debug_package magic in brp-strip-os2).
             dbgfilelist = tgt_dir + '.debugfiles.list'
             remove_path (dbgfilelist)
@@ -1185,9 +1197,9 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
             run_pipe ([[RPM2CPIO_EXE, debug_rpm], [CPIO_EXE, '-idm'] + masks])
           # Put the 'done' mark.
           with open (tgt_list, 'w') as l:
-            l.write ('%s|%s|%s|%s\n'  % (ts, rpm, name, ver))
+            l.write (f'{ts}|{rpm}|{name}|{ver}\n')
 
-        with open (os.path.join (source_dir, '%s-legacy' % spec_base, 'abi.list'), 'w') as l:
+        with open (os.path.join (source_dir, f'{spec_base}-legacy', 'abi.list'), 'w') as l:
           l.write (' '.join (abi_list) + '\n')
 
 #
@@ -1208,7 +1220,7 @@ def build_cmd ():
 
     build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config)
 
-    log ('Targets: ' + ', '.join (archs) + ', ZIP (%s), SRPM' % archs [0])
+    log ('Targets: ' + ', '.join (archs) + f', ZIP ({archs [0]}), SRPM')
 
     log_base = os.path.join (g_log_dir, 'build', spec_base)
 
@@ -1217,10 +1229,10 @@ def build_cmd ():
       with open (summary, 'r') as f:
         ver = f.readline ().strip ()
       if g_args.force_command:
-        log_note ('Overwriting previous build of `%s` (%s) due to -f option.' % (spec_base, ver))
+        log_note (f'Overwriting previous build of `{spec_base}` ({ver}) due to -f option.')
       else:
-        raise Error ('Build summary for `%s` version %s already exists: %s' % (spec_base, ver, summary),
-                     hint = 'Use -f option to overwrite this build with another one w/o uploading it.')
+        raise Error (f'Build summary for `{spec_base}` version {ver} already exists: {summary}',
+          hint = 'Use -f option to overwrite this build with another one w/o uploading it.')
 
     remove_path (log_base, relaxed = True)
     ensure_dir (log_base)
@@ -1228,17 +1240,17 @@ def build_cmd ():
     # Generate RPMs for all architectures.
 
     base_rpms = None
-    arch_rpms = dict ()
-    noarch_rpms = dict ()
+    arch_rpms = {}
+    noarch_rpms = {}
 
     for arch in archs:
 
-      log_file = os.path.join (log_base, '%s.log' % arch)
-      log ('Creating RPMs for `%(arch)s` target (logging to %(log_file)s)...' % locals ())
+      log_file = os.path.join (log_base, f'{arch}.log')
+      log (f'Creating RPMs for `{arch}` target (logging to {log_file})...')
 
-      rpms = run_log (log_file, [RPMBUILD_EXE, '--target=%s' % arch, '-bb',
-                                 '--define=_sourcedir %s' % source_dir, full_spec],
-                      r'^Wrote: +(.+\.(?:%s|noarch)\.rpm)$' % arch)
+      rpms = run_log (log_file,
+        [RPMBUILD_EXE, f'--target={arch}', '-bb', f'--define=_sourcedir {source_dir}', full_spec],
+        rf'^Wrote: +(.+\.(?:{arch}|noarch)\.rpm)$')
 
       if len (rpms):
         # Save the base arch RPMs for later.
@@ -1252,58 +1264,58 @@ def build_cmd ():
           else:
             arch_only.append (r)
         if len (arch_only) == 0:
-          log ('Skipping other targets because `%s` produced only `noarch` RPMs.' % arch)
+          log (f'Skipping other targets because `{arch}` produced only `noarch` RPMs.')
           break
         arch_rpms [arch] = arch_only
       else:
-        raise Error ('Cannot find `.(%(arch)s|noarch).rpm` file names in `%(log_file)s`.' % locals ())
+        raise Error (f'Cannot find `.({arch}|noarch).rpm` file names in `{log_file}`.')
 
     arch_rpms ['noarch'] = noarch_rpms.keys ()
 
     # Generate SRPM.
 
     log_file = os.path.join (log_base, 'srpm.log')
-    log ('Creating SRPM (logging to %s)...' % log_file)
+    log (f'Creating SRPM (logging to {log_file})...')
 
-    srpm = run_log (log_file, [RPMBUILD_EXE, '-bs',
-                               '--define=_sourcedir %s' % source_dir, full_spec],
-                    r'^Wrote: +(.+\.src\.rpm)$') [0]
+    srpm = run_log (log_file,
+      [RPMBUILD_EXE, '-bs', f'--define=_sourcedir {source_dir}', full_spec],
+      r'^Wrote: +(.+\.src\.rpm)$') [0]
 
     if not srpm:
-      raise Error ('Cannot find `.src.rpm` file name in `%s`.' % log_file)
+      raise Error (f'Cannot find `.src.rpm` file name in `{log_file}`.')
 
     # Find package version.
 
     srpm_base = os.path.basename (srpm)
-    spec_ver = re.match (r'(%s)-(%s)\.src\.rpm' % (spec_base, VER_FULL_REGEX), srpm_base)
+    spec_ver = re.match (rf'({spec_base})-({VER_FULL_REGEX})\.src\.rpm', srpm_base)
     if not spec_ver or spec_ver.lastindex != 2:
-      raise Error ('Cannot deduce package version from `%s` with spec_base `%s`' % (srpm, spec_base),
-                   hint = 'Check that Release value ends with %{?dist} macro in `%s`.spec' % spec_base)
+      raise Error (f'Cannot deduce package version from `{srpm}` with spec_base `{spec_base}`',
+        hint = f'Check that Release value ends with %{{?dist}} macro in `{spec_base}`.spec')
 
     srpm_name = spec_ver.group (1)
     ver_full = spec_ver.group (2)
     if srpm_name != spec_base:
-      raise Error ('Package name in `%(srpm_base)s` does not match .spec name `%(spec_base)s`.\n'
-                   'Either rename `%(spec_base)s.spec` to `%(srpm_name)s.spec` or set `Name:` tag to `%(spec_base)s`.'  % locals())
+      raise Error (f'Package name in `{srpm_base}` does not match .spec name `{spec_base}`.\n'
+        f'Either rename `{spec_base}.spec` to `{srpm_name}.spec` or set `Name:` tag to `{spec_base}`.')
 
     # Generate ZIP.
 
     log_file = os.path.join (log_base, 'zip.log')
-    log ('Creating ZIP (logging to %s)...' % log_file)
+    log (f'Creating ZIP (logging to {log_file})...')
 
-    zip_file = os.path.join (g_zip_dir, '%s-%s.zip' % (spec_base, ver_full.replace ('.', '_')))
+    zip_file = os.path.join (g_zip_dir, f'{spec_base}-{ver_full.replace ('.', '_')}.zip')
 
-    def gen_zip ():
+    def gen_zip (base_rpms = base_rpms, zip_file = zip_file):
 
       os.chdir (g_zip_dir)
       remove_path ('@unixroot')
 
       for r in base_rpms:
-        log ('Unpacking `%s`...' % r)
+        log (f'Unpacking `{r}`...')
         run_pipe ([[RPM2CPIO_EXE, r], [CPIO_EXE, '-idm']])
 
       remove_path (zip_file)
-      log ('Creating `%s`...' % zip_file)
+      log (f'Creating `{zip_file}`...')
       run_pipe ([['zip', '-mry9', zip_file, '@unixroot']])
 
     func_log (log_file, gen_zip)
@@ -1311,20 +1323,20 @@ def build_cmd ():
     # Write a summary with all generated packages for further reference.
 
     def file_data (path):
-      return '%s|%s|%s' % (os.path.basename (path), os.path.getmtime (path), os.path.getsize (path))
+      return f'{os.path.basename (path)}|{os.path.getmtime (path)}|{os.path.getsize (path)}'
 
-    with open ('%s.tmp' % summary, 'w') as f:
+    with open (f'{summary}.tmp', 'w') as f:
       f.write (ver_full + '\n')
-      f.write ('%s@%s|%s\n' % (g_username, g_hostname, time.time ()))
-      f.write ('srpm|%s\n' % file_data (srpm))
-      f.write ('zip|%s\n' % file_data (zip_file))
-      for a in arch_rpms.keys ():
-        for r in arch_rpms [a]:
-          f.write ('%s|%s\n' % (a, file_data (r)))
+      f.write (f'{g_username}@{g_hostname}|{time.time ()}\n')
+      f.write (f'srpm|{file_data (srpm)}\n')
+      f.write (f'zip|{file_data (zip_file)}\n')
+      for arch, files in arch_rpms.items ():
+        for r in files:
+          f.write (f'{arch}|{file_data (r)}\n')
 
     # Everything succeeded.
-    os.rename ('%s.tmp' % summary, summary)
-    log ('Generated all packages for version %s.' % ver_full)
+    os.rename (f'{summary}.tmp', summary)
+    log (f'Generated all packages for version {ver_full}.')
 
 
 #
@@ -1372,34 +1384,35 @@ def test_cmd ():
         if os.path.isfile (lf):
           with open (lf, 'r') as f:
             for line in iter (f.readline, ''):
-              for r in re.findall (r'^Wrote: +(.+\.(?:%s|noarch)\.rpm)$' % base_arch, line):
+              for r in re.findall (rf'^Wrote: +(.+\.(?:{base_arch}|noarch)\.rpm)$', line):
                 rpms.add (r)
 
       if len (rpms) > 0:
         for r in rpms:
-          log ('Deleting %s...' % r)
+          log (f'Deleting {r}...')
           if os.path.isfile (r):
             os.remove (r)
-        for l in g_test_cmd_steps.keys ():
+        for l in g_test_cmd_steps:
           # delete log and rotate_log product (nb: keep in sync)
           for ext in ['.log', '.log.bak']:
             lf = os.path.join (log_base, l + ext)
             if os.path.isfile (lf):
-              log ('Deleting %s...' % lf)
+              log (f'Deleting {lf}...')
               os.remove (lf)
       else:
-        raise Error ('No RPMs found in %s/*.log files.' % log_base)
+        raise Error (f'No RPMs found in {log_base}/*.log files.')
 
       continue
 
     log_file = os.path.join (log_base, g_args.STEP + '.log')
     rotate_log (log_file)
 
-    log ('Creating test RPMs for `%(base_arch)s` target (logging to %(log_file)s)...' % locals ())
+    log (f'Creating test RPMs for `{base_arch}` target (logging to {log_file})...')
 
-    rpms = run_log (log_file, [RPMBUILD_EXE, '--target=%s' % base_arch, '--define=dist %nil',
-                               '--define=_sourcedir %s' % source_dir] + opts + [full_spec],
-                    r'^Wrote: +(.+\.(?:%s|noarch)\.rpm)$' % base_arch)
+    rpms = run_log (log_file,
+      [RPMBUILD_EXE, f'--target={base_arch}', '--define=dist %nil',
+        f'--define=_sourcedir {source_dir}'] + opts + [full_spec],
+      rf'^Wrote: +(.+\.(?:{base_arch}|noarch)\.rpm)$')
 
     # Show the generated RPMs when appropriate.
     if g_args.STEP == 'all' or g_args.STEP == 'pack':
@@ -1407,7 +1420,7 @@ def test_cmd ():
         log ('Successfully generated the following RPMs:')
         log ('\n'.join (rpms))
       else:
-        raise Error ('Cannot find `.(%(base_arch)s|noarch).rpm` file names in `%(log_file)s`.' % locals ())
+        raise Error (f'Cannot find `.({base_arch}|noarch).rpm` file names in `{log_file}`.')
 
 
 #
@@ -1431,7 +1444,7 @@ def move_cmd ():
   for spec in g_args.SPEC.split (','):
 
     if is_upload or is_remove_local:
-       # Will use the last built version (if any).
+      # Will use the last built version (if any).
       config = copy.deepcopy (g_config)
       full_spec, spec_base, spec_aux_dir = resolve_spec (spec, g_spec_dirs, config)
       ver = None
@@ -1440,9 +1453,9 @@ def move_cmd ():
       try:
         spec, ver = spec.split (':', 1)
       except ValueError:
-        raise Error ('No version given for `%s`' % spec, hint = 'Use `list` command to get available versions')
-      if not re.match (r'^%s$' % VER_FULL_REGEX, ver):
-        raise Error ('Invalid version specification: `%s`' % ver)
+        raise Error (f'No version given for `{spec}`', hint = 'Use `list` command to get available versions')
+      if not re.match (rf'^{VER_FULL_REGEX}$', ver):
+        raise Error (f'Invalid version specification: `{ver}`')
       spec_base = spec # Don't deal with path or ext here.
 
     if is_remove:
@@ -1461,20 +1474,20 @@ def move_cmd ():
       if not is_upload:
         # Look for a summary in one of the group's repos.
         for repo in repos:
-          from_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver, 'summary')
+          from_summary = os.path.join (group_config [f'repo.{repo}'] ['log'], spec_base, ver, 'summary')
           if os.path.isfile (from_summary):
             from_repo = repo
             break
         if not from_repo:
-          raise Error ('No build summary for `%s` version %s in any of `%s` repositories' % (spec_base, ver, group),
-                       hint = 'Use `upload` command to upload the packages first.')
+          raise Error (f'No build summary for `{spec_base}` version {ver} in any of `{group}` repositories',
+            hint = 'Use `upload` command to upload the packages first.')
 
       if from_repo and not from_repo in group_config ['repos']:
-        raise Error ('No repository `%s` listed in configured group `%s`' % (from_repo, group))
+        raise Error (f'No repository `{from_repo}` listed in configured group `{group}`')
 
     else:
 
-      from_summary = os.path.join (group_config ['repo.%s' % from_repo] ['log'], spec_base, 'summary')
+      from_summary = os.path.join (group_config [f'repo.{from_repo}'] ['log'], spec_base, 'summary')
 
     prompt = False
 
@@ -1486,46 +1499,46 @@ def move_cmd ():
         if i < len (repos) - 1:
           to_repo = repos [i + 1]
         else:
-          raise Error ('Build summary for `%s` already in `%s`, last in group `%s`: %s' % (spec_base, from_repo, group, from_summary),
-                       hint = 'Specify a target repository explicitly')
+          raise Error (f'Build summary for `{spec_base}` already in `{from_repo}`, last in group `{group}`: {from_summary}',
+            hint = 'Specify a target repository explicitly')
       else:
         to_repo = repos [0]
 
     if not is_remove:
       if not to_repo in repos:
-        raise Error ('No repository `%s` in configured group `%s`' % (to_repo, group))
+        raise Error (f'No repository `{to_repo}` in configured group `{group}`')
       if from_repo == to_repo:
-        raise Error ('Source and target repository are the same: `%s`' % (to_repo))
+        raise Error (f'Source and target repository are the same: `{to_repo}`')
 
-    from_repo_config = group_config ['repo.%s' % from_repo]
+    from_repo_config = group_config [f'repo.{from_repo}']
     if not is_remove:
-      to_repo_config = group_config ['repo.%s' % to_repo]
+      to_repo_config = group_config [f'repo.{to_repo}']
 
-    log ('From repository : %s' % from_repo_config ['base'])
+    log (f'From repository : {from_repo_config ['base']}')
     if not is_remove:
-      log ('To repository   : %s' % to_repo_config ['base'])
+      log (f'To repository   : {to_repo_config ['base']}')
 
     try:
       ver_full, build_user, build_time, rpms, _ = read_build_summary (spec_base, ver, from_repo, group_config)
     except NoBuildSummary as e:
-      raise Error ('No build summary for `%s` (%s)' % (spec_base, e.summary),
-                   hint = 'Use `build` command to build the packages first.')
+      raise Error (f'No build summary for `{spec_base}` ({e.summary})',
+        hint = 'Use `build` command to build the packages first.')
 
     if not is_upload and not is_remove_local and ver_full != ver:
-      raise Error ('Requested version %s differs from version %s stored in summary' % (ver, ver_full))
+      raise Error (f'Requested version {ver} differs from version {ver_full} stored in summary')
 
-    log ('Version         : %s' % ver_full)
-    log ('Build user      : %s' % build_user)
-    log ('Build time      : %s' % to_localtimestr (build_time))
+    log (f'Version         : {ver_full}')
+    log (f'Build user      : {build_user}')
+    log (f'Build time      : {to_localtimestr (build_time)}')
 
     if is_remove:
       answer = log_input_warn ('Do you really want to remove this package instead of %s?\n'
-                               'This operation cannot be undone. Proceed?' %
-                               ('uploading it' if is_remove_local else 'moving it to an archive repo'), 'YN')
+        'This operation cannot be undone. Proceed?' %
+        ('uploading it' if is_remove_local else 'moving it to an archive repo'), 'YN')
       if not answer == 'Y':
         raise CommandCancelled ()
     elif prompt:
-      answer = log_input_warn ('Target repository `%s` was auto-detected. Proceed?' % to_repo, 'YN')
+      answer = log_input_warn (f'Target repository `{to_repo}` was auto-detected. Proceed?', 'YN')
       if not answer == 'Y':
         raise CommandCancelled ()
 
@@ -1539,56 +1552,55 @@ def move_cmd ():
       to_summary = os.path.join (to_repo_config ['log'], spec_base, ver_full, 'summary')
       if os.path.isfile (to_summary):
         if g_args.force_command:
-          log_note ('Overwriting previous build of `%s` due to -f option.' % spec_base)
+          log_note (f'Overwriting previous build of `{spec_base}` due to -f option.')
           old_repo = to_repo
           old_summary = to_summary
         else:
-          raise Error ('Build summary for `%s` already exists: %s' % (spec_base, to_summary),
+          raise Error (f'Build summary for `{spec_base}` already exists: {to_summary}',
                        hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
       elif is_upload:
         # Search for a summary in any group's repo.
         for repo in repos:
-          maybe_summary = os.path.join (group_config ['repo.%s' % repo] ['log'], spec_base, ver_full, 'summary')
+          maybe_summary = os.path.join (group_config [f'repo.{repo}'] ['log'], spec_base, ver_full, 'summary')
           if os.path.isfile (maybe_summary):
             if g_args.force_command:
-              log_note ('Ignoring existing build of `%s` in repository `%s` due to -f option.' % (spec_base, repo))
+              log_note (f'Ignoring existing build of `{spec_base}` in repository `{repo}` due to -f option.')
               old_repo = repo
               old_summary = maybe_summary
             else:
-              raise Error ('Build summary for `%s` already exists in `%s`: %s' % (spec_base, repo, maybe_summary),
-                           hint = 'If recovering from a failure, use -f option to ignore this build.')
+              raise Error (f'Build summary for `{spec_base}` already exists in `{repo}`: {maybe_summary}',
+                hint = 'If recovering from a failure, use -f option to ignore this build.')
 
     # Attempt to clean up files from the old summary (or just remove stuff for is_remove).
     if old_repo or is_remove_local:
       if not is_remove:
-        log ('Removing old build''s packages and logs for `%s`...' % old_summary)
+        log ('Removing old build'f's packages and logs for `{old_summary}`...')
       _, _, _, old_rpms, _ = read_build_summary (spec_base, None if is_remove_local else ver_full, old_repo, group_config)
-      for arch in old_rpms.keys ():
+      for arch, files in old_rpms.items ():
         if arch in ['srpm', 'zip']:
-          f = old_rpms [arch]
           if is_remove:
-            log ('Removing %s...' % f)
-          os.remove (f)
+            log (f'Removing {files}...')
+          os.remove (files)
         else:
-          for f in old_rpms [arch]:
+          for f in files:
             if is_remove:
-              log ('Removing %s...' % f)
+              log (f'Removing {f}...')
             os.remove (f)
       if is_remove:
-        log ('Removing logs in %s...' % os.path.dirname (old_summary))
+        log (f'Removing logs in {os.path.dirname (old_summary)}...')
       remove_path (os.path.dirname (old_summary))
 
     # Commit the spec file and dir.
     if is_upload:
 
-      commit_msg = '%s: Release version %s.' % (spec_base, ver_full)
+      commit_msg = f'{spec_base}: Release version {ver_full}.'
 
       vcs = get_vcs_type (full_spec).upper ()
-      log ('\nThe spec file is under %s version control and needs to be committed as:' % vcs)
-      log ('  "%s"\n\n' % commit_msg)
+      log (f'\nThe spec file is under {vcs} version control and needs to be committed as:')
+      log (f'  "{commit_msg}"\n\n')
       log ('The working copy will be updated now and then you will get a diff for careful '
-           'inspection. If this process (or a subsequent commit) fails, you will have to '
-           'fix the failure manually and then re-run the `upload` command again.', wrap_width = 0)
+        'inspection. If this process (or a subsequent commit) fails, you will have to '
+        'fix the failure manually and then re-run the `upload` command again.', wrap_width = 0)
       if not log_input ('Press Enter to continue.') == '':
         raise CommandCancelled ()
 
@@ -1600,8 +1612,8 @@ def move_cmd ():
         # Check for untracked files in spec AUX dir.
         untracked = command_output (['git', 'ls-files', '--other', '--', '.'], cwd = spec_aux_dir)
         if untracked.strip () != '':
-          raise Error ('Untracked files are found in `%s`:\n%s\n\n' % (spec_aux_dir, '\n'.join ('  %s' % f for f in untracked.splitlines ())),
-                       hint = 'Add these files with `git add` (or remove/ignore them) manually and retry.')
+          raise Error (f'Untracked files are found in `{spec_aux_dir}`:\n{'\n'.join (f'  {f}' for f in untracked.splitlines ())}\n\n',
+            hint = 'Add these files with `git add` (or remove/ignore them) manually and retry.')
         # Check for modified files.
         commit_files = ['.'] if spec_dir == spec_aux_dir else [spec_file, spec_aux_dir]
         modified = [os.path.basename (f) for f in command_output (['git', 'diff', '--cached', '--name-only', '--'] + commit_files, cwd = spec_dir).splitlines ()]
@@ -1609,7 +1621,7 @@ def move_cmd ():
         if not spec_file in modified:
           last_spec_msg = command_output (['git', 'log', '-n', '1', '--pretty=format:%s', '--', spec_file], cwd = spec_dir).strip ()
           if last_spec_msg != commit_msg:
-            raise Error ('`%s` is not modified and has a different last commit message:\n  "%s"' % (spec_file, last_spec_msg))
+            raise Error (f'`{spec_file}` is not modified and has a different last commit message:\n  "{last_spec_msg}"')
         if len (modified) > 0:
           # Show diffs.
           command (['git', 'diff', '--cached', '--'] + commit_files, cwd = spec_dir)
@@ -1623,37 +1635,36 @@ def move_cmd ():
           command (['git', 'add', '--'] + commit_files, cwd = spec_dir)
           command (['git', 'commit', '-m', commit_msg, '--'] + commit_files, cwd = spec_dir)
         else:
-          log ('No modified files but the last commit message of `%s` matches the above.' % spec_file)
+          log (f'No modified files but the last commit message of `{spec_file}` matches the above.')
         # Finally, push the commit.
-        answer = log_input ('Push the commit to %s and upload RPMs to `%s`?' % (vcs, to_repo), 'YN')
+        answer = log_input (f'Push the commit to {vcs} and upload RPMs to `{to_repo}`?', 'YN')
         if not answer == 'Y':
           raise CommandCancelled ()
         command (['git', 'push'], cwd = spec_dir)
       else:
-        raise Error ('Unsupported version control system: %s' % vcs)
+        raise Error (f'Unsupported version control system: {vcs}')
 
 
     # Copy RPMs.
     if not is_remove:
 
       # Check that the base dir exists just in case (note that we don't want to implicitly create it here).
-      if not os.path.isdir (group_config['base']):
-        raise Error ('%s' % group_config['base'], 'Not a directory')
+      if not os.path.isdir (group_config ['base']):
+        raise Error (group_config ['base'], 'Not a directory')
 
       rpms_to_copy = []
 
-      for arch in rpms.keys ():
+      for arch, files in rpms.items ():
         if arch in ['srpm', 'zip']:
-          src = rpms [arch]
           dst = to_repo_config [arch]
-          rpms_to_copy.append ((src, dst))
+          rpms_to_copy.append ((files, dst))
         else:
           dst = os.path.join (to_repo_config ['rpm'], arch)
-          for src in rpms [arch]:
+          for src in files:
             rpms_to_copy.append ((src, dst))
 
       for src, dst in rpms_to_copy:
-        log ('Copying %s -> %s...' % (src, dst))
+        log (f'Copying {src} -> {dst}...')
         ensure_dir (dst)
         shutil.copy2 (src, dst)
 
@@ -1667,19 +1678,19 @@ def move_cmd ():
 
       if is_upload:
         # Local build - zip all logs (otherwise they are already zipped).
-        log ('Packing logs to %s...' % zip_path)
+        log (f'Packing logs to {zip_path}...')
         zip_files = []
-        for arch in rpms.keys ():
+        for arch in rpms:
           if arch != 'noarch':
-            zip_files.append (os.path.join (from_log, '%s.log' % arch))
+            zip_files.append (os.path.join (from_log, f'{arch}.log'))
           else:
-            base_arch = get_basespec_arch(config, spec_base)
-            zip_files.append (os.path.join (from_log, '%s.log' % base_arch))
+            base_arch = get_basespec_arch (config, spec_base)
+            zip_files.append (os.path.join (from_log, f'{base_arch}.log'))
         run_pipe ([['zip', '-jy9', zip_path] + zip_files])
 
       to_log = os.path.join (to_repo_config ['log'], spec_base, ver_full)
 
-      log ('Copying logs %s -> %s...' % (from_log, to_log))
+      log (f'Copying logs {from_log} -> {to_log}...')
 
       remove_path (to_log)
       ensure_dir (to_log)
@@ -1690,7 +1701,7 @@ def move_cmd ():
 
       # Record the transition.
       with open (to_summary, 'a') as f:
-        f.write ('>%s|%s@%s|%s\n' % (to_repo, g_username, g_hostname, time.time ()))
+        f.write (f'>{to_repo}|{g_username}@{g_hostname}|{time.time ()}\n')
 
       log ('Removing copied packages...')
 
@@ -1708,7 +1719,7 @@ def move_cmd ():
 
         # Archive local logs.
         archive_dir = os.path.join (g_log_dir, 'archive', spec_base, ver_full)
-        log ('Archiving logs to %s...' % archive_dir)
+        log (f'Archiving logs to {archive_dir}...')
         remove_path (archive_dir)
         ensure_dir (archive_dir)
         for src in logs_to_copy:
@@ -1716,7 +1727,7 @@ def move_cmd ():
 
         # Remove unpacked logs.
         for src in zip_files:
-          if os.path.exists(src):
+          if os.path.exists (src):
             os.remove (src)
 
       # Remove source log dir.
@@ -1755,7 +1766,7 @@ def list_cmd ():
 
   for section in config.sections ():
 
-    if fnmatch.fnmatch (section, 'group.%s' % group_mask):
+    if fnmatch.fnmatch (section, f'group.{group_mask}'):
 
       _, group = section.split ('.')
       group_config = read_group_config (group, config)
@@ -1765,7 +1776,7 @@ def list_cmd ():
 
         if fnmatch.fnmatch (repo, repo_mask):
 
-          log_base = os.path.join (group_config ['repo.%s' % repo] ['log'])
+          log_base = os.path.join (group_config [f'repo.{repo}'] ['log'])
 
           # Ignore missing log dirs.
           files = []
@@ -1786,7 +1797,7 @@ def list_cmd ():
                     if os.path.isdir (os.path.join (log_dir, ver)):
 
                       # NOTE: Don't call #read_build_summary to save time.
-                      log ('%-20s %s:%s' % ('%s:%s' % (group, repo), spec, ver))
+                      log (f'{f'{group}:{repo}':<20} {spec}:{ver}')
 
 
 #
@@ -1805,48 +1816,48 @@ def info_cmd ():
   try:
     group, repo = g_args.GROUP.split (':', 1)
   except ValueError:
-    raise Error ('No repository given after `%s`' % g_args.GROUP)
+    raise Error (f'No repository given after `{g_args.GROUP}`')
 
   for spec in g_args.SPEC.split (','):
 
     try:
       spec, ver = spec.split (':', 1)
     except ValueError:
-      raise Error ('No version given for `%s`' % spec, hint = 'Use `list` command to get available versions')
-    if not re.match (r'^%s$' % VER_FULL_REGEX, ver):
-      raise Error ('Invalid version specification: `%s`' % ver)
+      raise Error (f'No version given for `{spec}`', hint = 'Use `list` command to get available versions')
+    if not re.match (rf'^{VER_FULL_REGEX}$', ver):
+      raise Error (f'Invalid version specification: `{ver}`')
 
     group_config = read_group_config (group, config)
-    repo_config = group_config ['repo.%s' % repo]
+    repo_config = group_config [f'repo.{repo}']
 
     try:
       ver_full, build_user, build_time, rpms, hist = read_build_summary (spec, ver, repo, group_config)
     except NoBuildSummary as e:
-      raise Error ('No build summary for `%s` version %s (%s)' % (spec, ver, e.summary))
+      raise Error (f'No build summary for `{spec}` version {ver} ({e.summary})')
 
-    log ('Rrepository  : %s' % repo_config ['base'])
-    log ('Version      : %s' % ver_full)
-    log ('Build user   : %s' % build_user)
-    log ('Build time   : %s' % to_localtimestr (build_time))
+    log (f'Rrepository  : {repo_config ['base']}')
+    log (f'Version      : {ver_full}')
+    log (f'Build user   : {build_user}')
+    log (f'Build time   : {to_localtimestr (build_time)}')
 
     if True:
       first = True
-      for rpm in rpms.keys ():
+      for arch, files in rpms.items ():
         str = 'RPMs         : %s' if first else '             : %s'
         first = False
-        if rpm in ['srpm', 'zip']:
-          log (str % os.path.basename (rpms [rpm]))
+        if arch in ['srpm', 'zip']:
+          log (str % os.path.basename (files))
         else:
-          for r in rpms [rpm]:
+          for r in files:
             log (str % os.path.basename (r))
     else:
       log ('RPMs         :')
-      for arch in rpms.keys ():
+      for arch, files in rpms.items ():
         str = '  %s'
         if arch in ['srpm', 'zip']:
-          log (str % os.path.basename (rpms [arch]))
+          log (str % os.path.basename (files))
         else:
-          for r in rpms [arch]:
+          for r in files:
             log (str % os.path.basename (r))
 
     if True:
@@ -1854,11 +1865,11 @@ def info_cmd ():
       for h in hist:
         str = 'Move history :' if first else '             :'
         first = False
-        log ('%s -> %s by %s on %s' % (str, h [0], h [1], to_localtimestr(h [2])))
+        log (f'{str} -> {h [0]} by {h [1]} on {to_localtimestr(h [2])}')
     else:
       log ('Move history :')
       for h in hist:
-        log ('  -> %s by %s on %s' % (h [0], h [1], to_localtimestr(h [2])))
+        log (f'  -> {h [0]} by {h [1]} on {to_localtimestr(h [2])}')
 
 #
 # =============================================================================
@@ -1872,7 +1883,7 @@ for v in ['HOME', 'TMP', 'TEMP', 'TMPDIR', 'PATH']:
   os.environ [v] = os.environ [v].replace ('\\', '/')
 
 # Script's start timestamp.
-g_start_ts = datetime.datetime.now ()
+g_start_ts = datetime.datetime.now ().astimezone ()
 
 # Script's own log file.
 g_log = None
@@ -1998,7 +2009,7 @@ g_cmd_info.set_defaults (cmd = info_cmd)
 
 g_args = g_cmdline.parse_args ()
 
-g_main_ini_path = os.path.expanduser ('~/%s' % SCRIPT_INI_FILE)
+g_main_ini_path = os.path.expanduser (f'~/{SCRIPT_INI_FILE}')
 
 g_config = Config (g_rpm)
 
@@ -2024,8 +2035,8 @@ try:
   try:
     with open (g_main_ini_path, 'r') as f:
       g_config.read_file (f)
-  except (IOError, OSError) as e:
-    raise Error ('Cannot read configuration from `%s`:\n%s' % (g_main_ini_path, str (e)))
+  except OSError as e:
+    raise Error (f'Cannot read configuration from `{g_main_ini_path}`:\n{e}')
 
   for d in g_config.getlines ('general:spec_dirs'):
     if d [0] == '+' and len (g_spec_dirs):
@@ -2045,7 +2056,7 @@ try:
 
   for m in ['_topdir', '_sourcedir']:
     if not g_rpm [m] or not os.path.isdir (g_rpm [m]):
-      raise Error ('Value of `%%%s` in rpmbuild is `%s` and not a directory' % (m, g_rpm [m]))
+      raise Error (f'Value of `%{m}` in rpmbuild is `{g_rpm [m]}` and not a directory')
 
   # Prepare some (non-rpmbuild-standard) directories.
 
@@ -2060,13 +2071,13 @@ try:
   if sys.stdout.isatty ():
     d = os.path.join (g_log_dir, SCRIPT_LOG_FILE)
     rotate_log (d)
-    g_log = open (d, 'w', buffering = 1)
-    sys.stdout.write ('[Logging to %s]\n' % d)
+    g_log = open (d, 'w', buffering = 1)  # noqa: SIM115
+    sys.stdout.write (f'[Logging to {d}]\n')
   else:
     g_log = sys.stdout
     sys.stdout.write ('[Logging to <console, redirected>]\n')
 
-  g_log.write ('[%s, %s]\n' % (g_start_ts.strftime (DATETIME_FMT), ' '.join (sys.argv)))
+  g_log.write (f'[{g_start_ts.strftime (DATETIME_FMT)}, {' '.join (sys.argv)}]\n')
 
   # Run command.
 
@@ -2075,18 +2086,18 @@ try:
 except (configparser.NoSectionError, configparser.NoOptionError, configparser.InterpolationError) as e:
 
   log_err ('config', str (e))
-  log_hint ('Check `%s` or spec-specific INI files' % g_main_ini_path)
+  log_hint (f'Check `{g_main_ini_path}` or spec-specific INI files')
   rc = 1
 
-except (IOError, OSError) as e:
+except OSError as e:
   log_err (str (e))
   rc = 2
 
 except RunError as e:
 
-  msg = 'The following command failed with: %s:\n  %s' % (e.msg, e.cmd)
+  msg = f'The following command failed with: {e.msg}:\n  {e.cmd}'
   if not e.hint and e.log_file:
-    e.hint = 'Inspect `%s` for more info.' % e.log_file
+    e.hint = f'Inspect `{e.log_file}` for more info.'
   log_err (e.prefix, msg)
   if e.hint:
     log_hint (e.hint)
@@ -2096,7 +2107,7 @@ except Error as e:
 
   log_err (e.prefix, e.msg)
   if e.prefix == 'config' and not e.hint:
-    e.hint = 'Check `%s` or spec-specific INI files' % g_main_ini_path
+    e.hint = f'Check `{g_main_ini_path}` or spec-specific INI files'
   if e.hint:
     log_hint (e.hint)
   rc = e.code
@@ -2105,7 +2116,7 @@ except CommandCancelled:
 
   rc = 126
 
-except:
+except:  # noqa: E722 (we log below)
 
   log_err ('Unexpected exception occured:')
   log (traceback.format_exc ())
@@ -2113,15 +2124,15 @@ except:
 
 finally:
 
-  end_ts = datetime.datetime.now ()
+  end_ts = datetime.datetime.now ().astimezone ()
   elapsed = str (end_ts - g_start_ts).rstrip ('0')
 
   if g_log != sys.stdout:
-    sys.stdout.write ('%s (%s s).\n' % (not rc and 'Succeeded' or rc == 126 and 'Cancelled' or 'Failed with exit code %s' % rc, elapsed))
+    sys.stdout.write (f'{not rc and 'Succeeded' or rc == 126 and 'Cancelled' or f'Failed with exit code {rc}'} ({elapsed} s).\n')
 
   # Finalize own log file.
   if g_log:
-    g_log.write ('[%s, exit code %d, %s s]\n\n' % (end_ts.strftime (DATETIME_FMT), rc, elapsed))
+    g_log.write (f'[{end_ts.strftime (DATETIME_FMT)}, exit code {rc}, {elapsed} s]\n\n')
     g_log.close ()
 
-exit (rc)
+sys.exit (rc)
