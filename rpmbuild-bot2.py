@@ -20,7 +20,7 @@ CPIO_EXE = 'cpio.exe'
 SCRIPT_INI_FILE = 'rpmbuild-bot2.ini'
 SCRIPT_LOG_FILE = 'rpmbuild-bot2.log'
 
-DATETIME_FMT = '%Y-%m-%d %H:%M:%S'
+DATETIME_FMT = '%Y-%m-%d %H:%M:%S%z'
 
 VER_FULL_REGEX = r'\d+[.\d\w]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = r'[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
@@ -618,7 +618,7 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
   with open (log_file, 'w', buffering = 1) as f:
 
     start_ts = datetime.datetime.now ().astimezone ()
-    f.write (f'[{start_ts.strftime (DATETIME_FMT)}, {' | '.join (' '.join(c) for c in commands)}]\n')
+    f.write (f'[{start_ts.strftime (DATETIME_FMT)} - {' | '.join (' '.join(c) for c in commands)}]\n')
 
     try:
 
@@ -636,7 +636,7 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
 
       end_ts = datetime.datetime.now ().astimezone ()
       elapsed = str (end_ts - start_ts).rstrip ('0')
-      f.write (f'[{end_ts.strftime (DATETIME_FMT)}, {msg}, {elapsed} s]\n')
+      f.write (f'[{end_ts.strftime (DATETIME_FMT)} - {msg}, {elapsed} s]\n')
 
       if rc:
         raise RunError (cmd, msg, log_file = log_file)
@@ -667,7 +667,7 @@ def func_log (log_file, func):
   with open (log_file, 'w', buffering = 1) as f:
 
     start_ts = datetime.datetime.now ().astimezone ()
-    f.write (f'[{start_ts.strftime (DATETIME_FMT)}, Python {func!s}]\n')
+    f.write (f'[{start_ts.strftime (DATETIME_FMT)} - Python {func!s}]\n')
 
     try:
 
@@ -697,7 +697,7 @@ def func_log (log_file, func):
 
       end_ts = datetime.datetime.now ().astimezone ()
       elapsed = str (end_ts - start_ts).rstrip ('0')
-      f.write (f'[{end_ts.strftime (DATETIME_FMT)}, {msg}, {elapsed} s]\n')
+      f.write (f'[{end_ts.strftime (DATETIME_FMT)} - {msg}, {elapsed} s]\n')
 
       if rc:
         raise RunError (str (func), msg, log_file = log_file)
@@ -2077,7 +2077,7 @@ try:
     g_log = sys.stdout
     sys.stdout.write ('[Logging to <console, redirected>]\n')
 
-  g_log.write (f'[{g_start_ts.strftime (DATETIME_FMT)}, {' '.join (sys.argv)}]\n')
+  g_log.write (f'[{g_start_ts.strftime (DATETIME_FMT)} - {' '.join (sys.argv)}]\n')
 
   # Run command.
 
@@ -2132,7 +2132,7 @@ finally:
 
   # Finalize own log file.
   if g_log:
-    g_log.write (f'[{end_ts.strftime (DATETIME_FMT)}, exit code {rc}, {elapsed} s]\n\n')
+    g_log.write (f'[{end_ts.strftime (DATETIME_FMT)} - exit code {rc}, {elapsed} s]\n\n')
     g_log.close ()
 
 sys.exit (rc)
