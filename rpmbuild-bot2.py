@@ -42,28 +42,26 @@ import textwrap
 import time
 import traceback
 
-#
-# -----------------------------------------------------------------------------
-#
-# Overrides ConfigParser to provide improved INI file reading by adding support
-# for the Python 3 `${section.option}` interpolation flavor. The idea is taken
-# from https://stackoverflow.com/a/35877548. Also adds the following extensions:
-#
-# - #getlist that interprets the option's value as list of strings separated by
-#   the given separator, and #getlines and #getwords shortcuts.
-# - Support for `${ENV:<NAME>}` interpolation that is replaced with the contents
-#   of the <NAME> environment variable.
-# - Support for `${SHELL:<COMMAND>}` interpolation that is replaced with the
-#   standard output of <COMMAND> run by the shell.
-# - Support for `${RPM:<NAME>}` interpolation that is replaced with the value of
-#   the <NAME> RPM macro.
-# - Support for copy.deepcopy.
-#
-# Note: We leave this class in even for Python 3 because of the extensions we
-# provide.
-#
 
 class Config (configparser.ConfigParser):
+  '''
+  Overrides ConfigParser to provide improved INI file reading by adding support
+  for the Python 3 `${section.option}` interpolation flavor. The idea is taken
+  from https://stackoverflow.com/a/35877548. Also adds the following extensions:
+
+  - #getlist that interprets the option's value as list of strings separated by
+    the given separator, and #getlines and #getwords shortcuts.
+  - Support for `${ENV:<NAME>}` interpolation that is replaced with the contents
+    of the <NAME> environment variable.
+  - Support for `${SHELL:<COMMAND>}` interpolation that is replaced with the
+    standard output of <COMMAND> run by the shell.
+  - Support for `${RPM:<NAME>}` interpolation that is replaced with the value of
+    the <NAME> RPM macro.
+  - Support for copy.deepcopy.
+
+  Note: We leave this class in even for Python 3 because of the extensions we
+  provide.
+  '''
 
   def __init__ (self, rpm_macros, *args, **kwargs):
 
@@ -128,19 +126,16 @@ class Config (configparser.ConfigParser):
   def getwords (self, section, option = None): return self.getlist (section, option, None)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Generic error exception for this script.
-#
-# If both prefix and msg are not None, then prefix followed by a colon is
-# prepended to msg. Otherwise prefix is considered empty and either of them
-# which is not None is treated as msg. The hint argument, if not None,
-# specifies recommendations on how to fix the error. Note that hint must always
-# go as a third argument (or be passed by name).
-#
-
 class Error (BaseException):
+  '''
+  Generic error exception for this script.
+
+  If both prefix and msg are not None, then prefix followed by a colon is
+  prepended to msg. Otherwise prefix is considered empty and either of them
+  which is not None is treated as msg. The hint argument, if not None,
+  specifies recommendations on how to fix the error. Note that hint must always
+  go as a third argument (or be passed by name).
+  '''
   code = 101
   def __init__ (self, prefix, msg = None, hint = None):
     self.prefix = prefix if msg else None
@@ -149,13 +144,10 @@ class Error (BaseException):
     BaseException.__init__ (self, (self.prefix and self.prefix + ': ' or '') + self.msg)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Error exception for #run and #run_pipe functions. See Error for more info.
-#
-
 class RunError (Error):
+  '''
+  Error exception for #run and #run_pipe functions. See Error for more info.
+  '''
   code = 102
   def __init__ (self, cmd, msg, hint = None, log_file = None):
     self.cmd = cmd
@@ -163,34 +155,26 @@ class RunError (Error):
     Error.__init__ (self, msg, hint = hint)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Returns a human readable string of float unix_time in local time zone.
-#
-
 def to_localtimestr (unix_time):
+  '''
+  Returns a human readable string of float unix_time in local time zone.
+  '''
   return time.strftime ('%Y-%m-%d %H:%M:%S %Z', time.localtime (unix_time))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Returns a human readable string of float unix_time in UTC.
-#
-
 def to_unixtimestr (unix_time):
+  '''
+  Returns a human readable string of float unix_time in UTC.
+  '''
   return time.strftime ('%Y-%m-%d %H:%M:%S UTC', time.gmtime (unix_time))
 
-#
-# -----------------------------------------------------------------------------
-#
-# Logs a message to the console and optionally to a file.
-#
-# If msg doesn't end with a new line terminator, it will be appended.
-#
 
 def log (msg, wrap_width = None, file_only = False):
+  '''
+  Logs a message to the console and optionally to a file.
+
+  If `msg` doesn't end with a new line terminator, it will be appended.
+  '''
 
   if wrap_width != None:
     if int (wrap_width) <= 0:
@@ -218,17 +202,14 @@ def log (msg, wrap_width = None, file_only = False):
       g_log.write (msg)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as log but prepends a string in kind followed by a colon to the message.
-#
-# The kind string should indicate the message kind (ERROR, HINT, INFO etc). If
-# msg is None, prefix will be treated as msg. Otherwise, prefix will be put
-# between kind and msg, followed by a colon.
-#
-
 def log_kind (kind, prefix, msg = None, **kwargs):
+  '''
+  Same as log but prepends a string in kind followed by a colon to the message.
+
+  The kind string should indicate the message kind (ERROR, HINT, INFO etc). If
+  msg is None, prefix will be treated as msg. Otherwise, prefix will be put
+  between kind and msg, followed by a colon.
+  '''
 
   if not msg:
     msg = prefix
@@ -257,16 +238,13 @@ def log_hint (prefix, msg = None, **kwargs):
   return log_kind ('HINT', prefix, msg, **kwargs)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Prompts a user for an input and returns the result logging both the prompt
-# and the user answer.
-#
-# Returns None if interrupted with Ctrl-Break or such.
-#
-
 def log_input (prompt, choice = None, kind = None):
+  '''
+  Prompts a user for an input and returns the result logging both the prompt
+  and the user answer.
+
+  Returns None if interrupted with Ctrl-Break or such.
+  '''
 
   choice_upper = choice.upper () if choice else None
 
@@ -288,13 +266,11 @@ def log_input (prompt, choice = None, kind = None):
 def log_input_warn (prompt, choice = None):
   return log_input (prompt, choice, kind = 'WARNING')
 
-#
-# -----------------------------------------------------------------------------
-#
-# Prepare a log file by backing up the previous one.
-#
 
 def rotate_log (log_file):
+  '''
+  Prepare a log file by backing up the previous one.
+  '''
 
   if os.path.exists (log_file):
 
@@ -313,14 +289,11 @@ def rotate_log (log_file):
       except OSError:
         raise Error (f'Cannot rename `{log_file}` to `.bak`: {e}')
 
-#
-# -----------------------------------------------------------------------------
-#
-# Ensures path is a directory and exists.
-#
 
 def ensure_dir (path):
-
+  '''
+  Ensures path is a directory and exists.
+  '''
   try:
     if not os.path.isdir (path):
       os.makedirs (path)
@@ -328,20 +301,16 @@ def ensure_dir (path):
     raise Error (f'Cannot create directory `{path}`: {e}')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Removes a file or a directory (including its contents) at path. Does not raise
-# an exception if the path does not exist.
-#
-# If optional @c relaxed is True, then the "Resource busy" error will also be
-# ignored. This is useful when deleting directories which the user may be
-# currently staying at (e.g. when examining logs). Shall not be set to True
-# when the directory must for sure not exist.
-#
-
 def remove_path (path, relaxed = False):
+  '''
+  Removes a file or a directory (including its contents) at path. Does not raise
+  an exception if the path does not exist.
 
+  If optional @c relaxed is True, then the "Resource busy" error will also be
+  ignored. This is useful when deleting directories which the user may be
+  currently staying at (e.g. when examining logs). Shall not be set to True
+  when the directory must for sure not exist.
+  '''
   try:
     if os.path.isfile (path):
       os.remove (path)
@@ -356,21 +325,18 @@ def remove_path (path, relaxed = False):
       raise
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Runs a command in a separate process and captures its output.
-#
-# This is a simplified shortcut to subprocess.check_output that raises RunError
-# on failure. Command must be a list where the first entry is the name of the
-# executable. Command's stderr is discarded.
-#
-# Note that this function will raise subprocess.CalledProcessError if the
-# command exits with a non-zero return code. To suppress this exception (and
-# get the return code together with the output, use #command_output_rc.
-#
-
 def command_output (command, cwd = None):
+  '''
+  Runs a command in a separate process and captures its output.
+
+  This is a simplified shortcut to `subprocess.check_output` that raises RunError
+  on failure. Command must be a list where the first entry is the name of the
+  executable. Command's stderr is discarded.
+
+  Note that this function will raise `subprocess.CalledProcessError` if the
+  command exits with a non-zero return code. To suppress this exception (and
+  get the return code together with the output, use `command_output_rc`.
+  '''
   try:
     with open (os.devnull, 'w') as fNull:
       return subprocess.check_output (command, stderr = fNull, cwd = cwd, env = g_run_env, text = True)
@@ -380,21 +346,18 @@ def command_output (command, cwd = None):
     raise RunError (' '.join (command), str (e))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Runs a shell command in a separate process and captures its output.
-#
-# This is a simplified shortcut to subprocess.check_output that raises RunError
-# on failure. Command must be a string representing a shell command. Command's
-# or shell's stderr is discarded.
-#
-# Note that this function will raise subprocess.CalledProcessError if the
-# command exits with a non-zero return code. To suppress this exception (and
-# get the return code together with the output, use #shell_output_rc.
-#
-
 def shell_output (command, cwd = None):
+  '''
+  Runs a shell command in a separate process and captures its output.
+
+  This is a simplified shortcut to subprocess.check_output that raises RunError
+  on failure. Command must be a string representing a shell command. Command's
+  or shell's stderr is discarded.
+
+  Note that this function will raise subprocess.CalledProcessError if the
+  command exits with a non-zero return code. To suppress this exception (and
+  get the return code together with the output, use `shell_output_rc`.
+  '''
   try:
     with open (os.devnull, 'w') as fNull:
       return subprocess.check_output (command, stderr = fNull, shell = True, cwd = cwd, env = g_run_env, text = True)
@@ -404,14 +367,11 @@ def shell_output (command, cwd = None):
     raise RunError (' '.join (command), str (e))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as #command_output but returns a tuple where the second value is
-# a command exit code.
-#
-
 def command_output_rc (command, cwd = None):
+  '''
+  Same as #command_output but returns a tuple where the second value is
+  a command exit code.
+  '''
   try:
     with open (os.devnull, 'w') as fNull:
       return subprocess.check_output (command, stderr = fNull, cwd = cwd, env = g_run_env, text = True), 0
@@ -419,14 +379,11 @@ def command_output_rc (command, cwd = None):
     return e.output, e.returncode
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as #shell_output but returns a tuple where the second value is
-# a shell exit code.
-#
-
 def shell_output_rc (command, cwd = None):
+  '''
+  Same as #shell_output but returns a tuple where the second value is
+  a shell exit code.
+  '''
   try:
     with open (os.devnull, 'w') as fNull:
       return subprocess.check_output (command, stderr = fNull, shell = True, cwd = cwd, env = g_run_env, text = True), 0
@@ -434,14 +391,11 @@ def shell_output_rc (command, cwd = None):
     return e.output, e.returncode
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as #command_output but suppresses all command's output and returns its
-# exit code.
-#
-
 def command_rc (command, cwd = None):
+  '''
+  Same as #command_output but suppresses all command's output and returns its
+  exit code.
+  '''
   try:
     with open (os.devnull, 'w') as fNull:
       return subprocess.call (command, stdout = fNull, stderr = fNull, cwd = cwd, env = g_run_env)
@@ -449,14 +403,11 @@ def command_rc (command, cwd = None):
     raise RunError (' '.join (command), str (e))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as #shell_output but suppresses all shell's output and returns its
-# exit code.
-#
-
 def shell_rc (command, cwd = None):
+  '''
+  Same as #shell_output but suppresses all shell's output and returns its
+  exit code.
+  '''
   try:
     with open (os.devnull, 'w') as fNull:
       return subprocess.call (command, stdout = fNull, stderr = fNull, shell = True, cwd = cwd, env = g_run_env)
@@ -464,14 +415,11 @@ def shell_rc (command, cwd = None):
     raise RunError (' '.join (command), str (e))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as #command_output but logs the command before executing it and does not
-# capture or suppress command's stdout or stderr.
-#
-
 def command (command, cwd = None):
+  '''
+  Same as #command_output but logs the command before executing it and does not
+  capture or suppress command's stdout or stderr.
+  '''
   command_str = ' '.join (command)
   try:
     log (f'Running `{command_str}`...')
@@ -482,14 +430,11 @@ def command (command, cwd = None):
     raise RunError (command_str, str (e))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Same as #shell_output but logs the command before executing it and does not
-# capture or suppress shell's or command's stdout or stderr.
-#
-
 def shell (command, cwd = None):
+  '''
+  Same as #shell_output but logs the command before executing it and does not
+  capture or suppress shell's or command's stdout or stderr.
+  '''
   command_str = ' '.join (command)
   try:
     log (f'Running [{command_str}]...')
@@ -500,24 +445,21 @@ def shell (command, cwd = None):
     raise RunError (command_str, str (e))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Executes a pipeline of commands with each command running in its own process.
-# If regex is not None, matching lines of the pipeline's output will be returned
-# as a list. If file is not None, all output will be sent to the given file
-# object using its write method and optionally sent to the console if
-# g_args.log_to_console is also set.
-#
-# Note that commands is expected to be a list where each entry is also a list
-# which is passed to subprocess.Popen to execute a command. If there is only
-# one command in the list, then it is simply executed in a new process witout
-# building up a pipeline.
-#
-# Raises Error if execution fails or terminates with a non-zero exit code.
-#
-
 def run_pipe (commands, regex = None, file = None, cwd = None):
+  '''
+  Executes a pipeline of commands with each command running in its own process.
+  If regex is not None, matching lines of the pipeline's output will be returned
+  as a list. If file is not None, all output will be sent to the given file
+  object using its write method and optionally sent to the console if
+  `g_args.log_to_console` is also set.
+
+  Note that commands is expected to be a list where each entry is also a list
+  which is passed to subprocess.Popen to execute a command. If there is only
+  one command in the list, then it is simply executed in a new process without
+  building up a pipeline.
+
+  Raises `Error` if execution fails or terminates with a non-zero exit code.
+  '''
 
   if not file:
     file = g_output_file
@@ -596,24 +538,18 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
   return lines
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Shortcut to #run_pipe for one command.
-#
-
 def run (command, regex = None, cwd = None):
+  '''
+  Shortcut to `run_pipe` for one command.
+  '''
   return run_pipe ([command], regex, cwd = cwd)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Similar to #run_pipe but all output produced by and external commands will be
-# be redirected to a log file.
-#
-
 def run_pipe_log (log_file, commands, regex = None, cwd = None):
+  '''
+  Similar to `run_pipe` but all output produced by and external commands will be
+  be redirected to a log file.
+  '''
 
   with open (log_file, 'w', buffering = 1) as f:
 
@@ -644,25 +580,19 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
   return lines
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Shortcut to #run_pipe_log for one command.
-#
-
 def run_log (log_file, command, regex = None):
+  '''
+  Shortcut to `run_pipe_log` for one command.
+  '''
   return run_pipe_log (log_file, [command], regex)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Similar to #run_log but runs a Python function. All output produced by #log
-# and external commands run via #run and #run_pipe within this function will be
-# redirected to a log file.
-#
-
 def func_log (log_file, func):
+  '''
+  Similar to `run_log` but runs a Python function. All output produced by `log`
+  and external commands run via #run and #run_pipe within this function will be
+  redirected to a log file.
+  '''
 
   with open (log_file, 'w', buffering = 1) as f:
 
@@ -703,14 +633,11 @@ def func_log (log_file, func):
         raise RunError (str (func), msg, log_file = log_file)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Returns a VCS type if the given path is in a tree which is under version
-# control, or None. Supported types are `git` and `svn`.
-#
-
 def get_vcs_type (path):
+  '''
+  Returns a VCS type if the given path is in a tree which is under version
+  control, or `None`. Supported types are `git` and `svn`.
+  '''
 
   if os.path.isfile (path):
     path = os.path.dirname (path)
@@ -735,28 +662,25 @@ def get_vcs_type (path):
   return None
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Searches for a spec file in the provided path or in spec_dirs if no path is
-# provided in spec. Assumes the `.spec` extension if it is missing. If the spec
-# file is found, this function will do the following:
-#
-# - Load SCRIPT_INI_FILE into config if it exists in a spec_dirs directory
-#   containing the spec file (directly or through children).
-# - Load SCRIPT_INI_FILE into config if it exists in the same directory
-#   where the spec file is found.
-# - Log the name of the found spec file.
-# - Return a tuple with the full path to the spec file, spec base name (w/o
-#   path or extension) and full path to the auxiliary source directory for this
-#   spec.
-# - Set the global g_run_env variable to the environment found in the INI file
-#   (if any), joined with the system environment.
-#
-# Otherwise, Error is raised and no INI files are loaded.
-#
-
 def resolve_spec (spec, spec_dirs, config):
+  '''
+  Searches for a spec file in the provided path or in spec_dirs if no path is
+  provided in spec. Assumes the `.spec` extension if it is missing. If the spec
+  file is found, this function will do the following:
+
+  - Load `SCRIPT_INI_FILE` into config if it exists in a spec_dirs directory
+    containing the spec file (directly or through children).
+  - Load `SCRIPT_INI_FILE` into config if it exists in the same directory
+    where the spec file is found.
+  - Log the name of the found spec file.
+  - Return a tuple with the full path to the spec file, spec base name (w/o
+    path or extension) and full path to the auxiliary source directory for this
+    spec.
+  - Set the global g_run_env variable to the environment found in the INI file
+    (if any), joined with the system environment.
+
+  Otherwise, `Error` is raised and no INI files are loaded.
+  '''
 
   found = 0
 
@@ -833,27 +757,24 @@ def resolve_spec (spec, spec_dirs, config):
   return (full_spec, spec_base, spec_aux_dir)
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Reads settings of a given repository group from a given config and returns a
-# dictionary with the following keys:
-#
-# - base: base directory of the group;
-# - repos: list of group's repositories;
-# - repo.REPO (a value from repos): dictionary with the following keys:
-#   - layout: repo layout's name;
-#   - base: base directoy of the repo (with group's base prepended);
-#   - rpm, srpm, zip, log: directories of respective parts as defined by repo's
-#     layout (with repo's base prepended).
-#
-# Besides repo.REPO for each repository from the group's repository list, there
-# is also a special key `repos.None` (where None is a None constant rather a
-# string). This key contains the respective local build directories where
-# rpmbuild puts RPMs.
-#
-
 def read_group_config (group, config):
+  '''
+  Reads settings of a given repository group from a given config and returns a
+  dictionary with the following keys:
+
+  - `base`: base directory of the group;
+  - `repos`: list of group's repositories;
+  - `repo.REPO` (a value from repos): dictionary with the following keys:
+    - `layout`: repo layout's name;
+    - `base`: base directoy of the repo (with group's base prepended);
+    - `rpm`, `srpm`, `zip`, `log`: directories of respective parts as defined by
+      repo's layout (with repo's base prepended).
+
+  Besides repo.REPO for each repository from the group's repository list, there
+  is also a special key `repos.None` (where None is a None constant rather a
+  string). This key contains the respective local build directories where
+  rpmbuild puts RPMs.
+  '''
 
   d = {}
 
@@ -894,16 +815,13 @@ def read_group_config (group, config):
   return d
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Returns a resolved path of a given file in a given repo.
-#
-# None as repo means the local build. Otherwise, it's a repo name from the INI
-# file and group_config must also be not None and represent this repo's group.
-#
-
 def resolve_path (name, arch, repo = None, group_config = None):
+  '''
+  Returns a resolved path of a given file in a given repo.
+
+  None as repo means the local build. Otherwise, it's a repo name from the INI
+  file and group_config must also be not None and represent this repo's group.
+  '''
 
   if arch in ['srpm', 'zip']:
     path = os.path.join (group_config [f'repo.{repo}'] [arch], name)
@@ -913,52 +831,46 @@ def resolve_path (name, arch, repo = None, group_config = None):
   return path
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Exception for #read_build_summary to let callers customize the error when
-# a summary file is missing.
-#
-
 class NoBuildSummary (BaseException):
+  '''
+  Exception for #read_build_summary to let callers customize the error when
+  a summary file is missing.
+  '''
   def __init__ (self, summary):
     self.summary = summary
     BaseException.__init__ (self, str (summary))
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Reads the build summary file of spec_base located in a given group and
-# returns the following as a tuple:
-#
-# - Full version as was defined by the spec.
-#
-# - Name of the user who built the spec followed by `@` and the hostname (both
-# are non-empty strings).
-#
-# - Timestamp of the build.
-#
-# - Dict containing resolved file names of all RPM files built from the spec.
-# The dict has the following keys: 'srpm', 'zip' and one key per each built
-# arch. The first two keys contain a single file name. Each of the arch keys
-# contains a list of file names.
-#
-# - List of move operations for this build where each entry is a list with the
-# following items: target repository, who moved (name@machine), unix time of
-# move.
-#
-# Passing None as group will read the summary from the local build directory.
-# Otherwise, it must be a repository group name from the INI file and config
-# must also be not None. In this case a summary file of the corresponding
-# repository will be accessed.
-#
-# This method performs integrity checking of the summary file (version string
-# validity, existence of files, their timestamps etc.) and raises an Error on
-# any failure.
-#
-
 def read_build_summary (spec_base, ver, repo, group_config):
+  '''
+  Reads the build summary file of spec_base located in a given group and
+  returns the following as a tuple:
+
+  - Full version as was defined by the spec.
+
+  - Name of the user who built the spec followed by `@` and the hostname (both
+    are non-empty strings).
+
+  - Timestamp of the build.
+
+  - Dict containing resolved file names of all RPM files built from the spec.
+    The dict has the following keys: 'srpm', 'zip' and one key per each built
+    arch. The first two keys contain a single file name. Each of the arch keys
+    contains a list of file names.
+
+  - List of move operations for this build where each entry is a list with the
+    following items: target repository, who moved (name@machine), unix time of
+    move.
+
+  Passing None as group will read the summary from the local build directory.
+  Otherwise, it must be a repository group name from the INI file and config
+  must also be not None. In this case a summary file of the corresponding
+  repository will be accessed.
+
+  This method performs integrity checking of the summary file (version string
+  validity, existence of files, their timestamps etc.) and raises an Error on
+  any failure.
+  '''
 
   log_base = os.path.join (group_config [f'repo.{repo}'] ['log'], spec_base)
 
@@ -1030,26 +942,18 @@ def read_build_summary (spec_base, ver, repo, group_config):
       raise Error (f'Cannot read build summary for `{spec_base}`:\n{e}')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Exception for #read_build_summary to let callers customize the error when
-# a summary file is missing.
-#
-
 class CommandCancelled (BaseException):
+  '''
+  Exception to signal that a command was cancelled by the user.
+  '''
   def __init__ (self):
     BaseException.__init__ (self, 'Command cancelled')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Get a list of archs to build for spec.
-#
-
 def get_spec_archs (config, spec_base):
-
+  '''
+  Get a list of archs to build for spec.
+  '''
   key = 'specs.archs'
   if config.has_option (key, spec_base):
     archs = config.getwords (key, spec_base)
@@ -1060,14 +964,10 @@ def get_spec_archs (config, spec_base):
   return config.getwords ('general:archs')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Get the base arch for spec.
-#
-
 def get_basespec_arch (config, spec_base):
-
+  '''
+  Get the base arch for spec.
+  '''
   base_arch = None
   archs = get_spec_archs (config, spec_base)
   for arch in archs:
@@ -1076,19 +976,17 @@ def get_basespec_arch (config, spec_base):
       break
   return base_arch
 
-#
-# -----------------------------------------------------------------------------
-#
-# Prepare for build and test commands. This includes the following:
-#
-# - Copy files from spec_aux_dir to source_dir (to be used as an override for
-# _sourcedir when calling rpmbuild for full_spec).
-#
-# - Download legacy runtime libraries for the given spec if spec legacy is
-# configured (TODO: Actually implement it).
-#
 
 def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config):
+  '''
+  Prepare for build and test commands. This includes the following:
+
+  - Copy files from spec_aux_dir to source_dir (to be used as an override for
+    `_sourcedir` when calling rpmbuild for full_spec).
+
+  - Download legacy runtime libraries for the given spec if spec legacy is
+    configured (TODO: Actually implement it).
+  '''
 
   ensure_dir (source_dir)
 
@@ -1202,13 +1100,11 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
         with open (os.path.join (source_dir, f'{spec_base}-legacy', 'abi.list'), 'w') as l:
           l.write (' '.join (abi_list) + '\n')
 
-#
-# -----------------------------------------------------------------------------
-#
-# Build command.
-#
 
 def build_cmd ():
+  '''
+  Build command.
+  '''
 
   for spec in g_args.SPEC.split (','):
 
@@ -1339,13 +1235,10 @@ def build_cmd ():
     log (f'Generated all packages for version {ver_full}.')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Test command.
-#
-
 def test_cmd ():
+  '''
+  Test command.
+  '''
 
   purge = g_args.STEP == 'purge'
 
@@ -1423,13 +1316,10 @@ def test_cmd ():
         raise Error (f'Cannot find `.({base_arch}|noarch).rpm` file names in `{log_file}`.')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Move command. Also used to implement upload and remove.
-#
-
 def move_cmd ():
+  '''
+  Move command. Also used to implement upload and remove.
+  '''
 
   is_upload = g_args.COMMAND == 'upload'
   is_remove = g_args.COMMAND == 'remove'
@@ -1557,7 +1447,7 @@ def move_cmd ():
           old_summary = to_summary
         else:
           raise Error (f'Build summary for `{spec_base}` already exists: {to_summary}',
-                       hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
+            hint = 'If recovering from a failure, use -f option to overwrite this build with a new one.')
       elif is_upload:
         # Search for a summary in any group's repo.
         for repo in repos:
@@ -1749,13 +1639,10 @@ def move_cmd ():
           raise
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# List command.
-#
-
 def list_cmd ():
+  '''
+  List command.
+  '''
 
   # No need in per-spec INI loading, load them from each non-plus spec_dir instead.
   config = copy.deepcopy (g_config)
@@ -1800,13 +1687,10 @@ def list_cmd ():
                       log (f'{f'{group}:{repo}':<20} {spec}:{ver}')
 
 
-#
-# -----------------------------------------------------------------------------
-#
-# Info command.
-#
-
 def info_cmd ():
+  '''
+  Info command.
+  '''
 
   # No need in per-spec INI loading, load them from each non-plus spec_dir instead.
   config = copy.deepcopy (g_config)
@@ -1871,11 +1755,11 @@ def info_cmd ():
       for h in hist:
         log (f'  -> {h [0]} by {h [1]} on {to_localtimestr(h [2])}')
 
-#
-# =============================================================================
-#
+
+#-------------------------------------------------------------------------------
 # Main
-#
+#-------------------------------------------------------------------------------
+
 
 # Fix slashes in common environment vars to ensure backslashes won't slip in
 # (which is generally bad because of escaping hell when passing them around).
