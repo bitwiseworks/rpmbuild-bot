@@ -1893,6 +1893,10 @@ g_cmd_info.set_defaults (cmd = info_cmd)
 
 g_args = g_cmdline.parse_args ()
 
+if not 'cmd' in g_args:
+  g_cmdline.print_help ()
+  sys.exit (1)
+
 g_main_ini_path = os.path.expanduser (f'~/{SCRIPT_INI_FILE}')
 
 g_config = Config (g_rpm)
