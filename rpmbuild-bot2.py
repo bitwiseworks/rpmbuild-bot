@@ -964,19 +964,6 @@ def get_spec_archs (config, spec_base):
   return config.getwords ('general:archs')
 
 
-def get_basespec_arch (config, spec_base):
-  '''
-  Get the base arch for spec.
-  '''
-  base_arch = None
-  archs = get_spec_archs (config, spec_base)
-  for arch in archs:
-    if not base_arch:
-      base_arch = arch
-      break
-  return base_arch
-
-
 def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config):
   '''
   Prepare for build and test commands. This includes the following:
@@ -1570,12 +1557,16 @@ def move_cmd ():
         # Local build - zip all logs (otherwise they are already zipped).
         log (f'Packing logs to {zip_path}...')
         zip_files = []
+        base_arch = get_spec_archs (config, spec_base) [0]
+        seen_base_arch = False
         for arch in rpms:
           if arch != 'noarch':
             zip_files.append (os.path.join (from_log, f'{arch}.log'))
-          else:
-            base_arch = get_basespec_arch (config, spec_base)
-            zip_files.append (os.path.join (from_log, f'{base_arch}.log'))
+            if not seen_base_arch and arch == base_arch:
+              seen_base_arch = True
+        # noach-only build, use the first arch's log
+        if not seen_base_arch:
+          zip_files.append (os.path.join (from_log, f'{base_arch}.log'))
         run_pipe ([['zip', '-jy9', zip_path] + zip_files])
 
       to_log = os.path.join (to_repo_config ['log'], spec_base, ver_full)
