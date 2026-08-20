@@ -1470,7 +1470,7 @@ def move_cmd ():
     # Commit the spec file and dir.
     if is_upload:
 
-      commit_msg = f'{spec_base}: Release version {ver_full}.'
+      commit_msg = f'{spec_base}: Release version {ver_full}'
 
       vcs = get_vcs_type (full_spec).upper ()
       log (f'\nThe spec file is under {vcs} version control and needs to be committed as:')
