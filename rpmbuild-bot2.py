@@ -118,7 +118,9 @@ class Config (configparser.ConfigParser):
     self.get_depth = self.get_depth - 1
     return ret
 
-  def getlist (self, section, option = None, sep = None):
+  def getlist (self, section, option = None, sep = None, keep_empty = False):
+    if keep_empty:
+      return self.get (section, option).split (sep)
     return [v for v in self.get (section, option).split (sep) if v]
 
   def getlines (self, section, option = None): return self.getlist (section, option, '\n')
@@ -757,7 +759,7 @@ def resolve_spec (spec, spec_dirs, config):
   return (full_spec, spec_base, spec_aux_dir)
 
 
-def read_group_config (group, config):
+def read_group_config (group, config: Config):
   '''
   Reads settings of a given repository group from a given config and returns a
   dictionary with the following keys:
@@ -950,7 +952,7 @@ class CommandCancelled (BaseException):
     BaseException.__init__ (self, 'Command cancelled')
 
 
-def get_spec_archs (config, spec_base):
+def get_spec_archs (config: Config, spec_base):
   '''
   Get a list of archs to build for spec.
   '''
@@ -958,10 +960,24 @@ def get_spec_archs (config, spec_base):
   if config.has_option (key, spec_base):
     archs = config.getwords (key, spec_base)
     if len (archs) < 1:
-      raise Error ('config', f'No value for option `{key}:{spec_base}`');
+      raise Error ('config', f'No value for option `{key}:{spec_base}`')
     return archs
 
   return config.getwords ('general:archs')
+
+
+def get_spec_scm_source (config: Config, spec_base):
+  '''
+  Get an SCM source override for spec.
+  '''
+  key = 'specs.scm_source'
+  if config.has_option (key, spec_base):
+    scm_source = config.getlist (key, spec_base, '|', True)
+    if len (scm_source) < 1:
+      raise Error ('config', f'No value for option `{key}:{spec_base}`')
+    return scm_source
+
+  return []
 
 
 def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config):
@@ -1229,14 +1245,16 @@ def test_cmd ():
 
   purge = g_args.STEP == 'purge'
 
-  g_test_cmd_steps = {
-    'prep': ['-bp', '--short-circuit'],
-    'build': ['-bc', '--short-circuit'],
-    'install': ['-bi', '--short-circuit'],
-    'pack': ['-bb', '--short-circuit'],
-    'all': ['-bb'],
+  g_test_cmd_steps =\
+  {
+    'prep': [ '-bp', '--short-circuit' ],
+    'build': [ '-bc', '--short-circuit' ],
+    'install': [ '-bi', '--short-circuit' ],
+    'pack': [ '-bb', '--short-circuit' ],
+    'all': [ '-bb' ],
   }
 
+  opts = []
   if not purge:
     opts = g_test_cmd_steps [g_args.STEP]
 
@@ -1247,6 +1265,16 @@ def test_cmd ():
 
     archs = get_spec_archs (config, spec_base)
     base_arch = archs [0]
+
+    # Override scm_source arguments, if present
+    scm_opts = []
+    scm_source = get_spec_scm_source (config, spec_base)
+    if len (scm_source) >= 1 and scm_source [0]:
+      scm_opts.append (f'--define=__source_scm {scm_source [0]}')
+    if len (scm_source) >= 2 and scm_source [1]:
+      scm_opts.append (f'--define=__source_url {scm_source [1]}')
+    if len (scm_source) >= 3 and scm_source [2]:
+      scm_opts.append (f'--define=__source_rev {scm_source [2]}')
 
     source_dir = os.path.join (g_rpm ['_sourcedir'], spec_base)
     if g_args.STEP in ['all', 'install']:
@@ -1290,8 +1318,8 @@ def test_cmd ():
     log (f'Creating test RPMs for `{base_arch}` target (logging to {log_file})...')
 
     rpms = run_log (log_file,
-      [RPMBUILD_EXE, f'--target={base_arch}', '--define=dist %nil',
-        f'--define=_sourcedir {source_dir}'] + opts + [full_spec],
+      [ RPMBUILD_EXE, f'--target={base_arch}', '--define=dist %nil',
+        f'--define=_sourcedir {source_dir}' ] + scm_opts + opts + [ full_spec ],
       rf'^Wrote: +(.+\.(?:{base_arch}|noarch)\.rpm)$')
 
     # Show the generated RPMs when appropriate.
