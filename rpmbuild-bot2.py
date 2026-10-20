@@ -151,9 +151,10 @@ class RunError (Error):
   Error exception for #run and #run_pipe functions. See Error for more info.
   '''
   code = 102
-  def __init__ (self, cmd, msg, hint = None, log_file = None):
+  def __init__ (self, cmd, msg, hint = None, log_file = None, lines = None):
     self.cmd = cmd
     self.log_file = log_file
+    self.lines = lines
     Error.__init__ (self, msg, hint = hint)
 
 
@@ -447,16 +448,27 @@ def shell (command, cwd = None):
     raise RunError (command_str, str (e))
 
 
-def run_pipe (commands, regex = None, file = None, cwd = None):
+def run_pipe (commands, regex = None, file = None, cwd = None, output_regex = None):
   '''
-  Executes a pipeline of commands with each command running in its own process.
-  If regex is not None, matching lines of the pipeline's output will be returned
-  as a list. If file is not None, all output will be sent to the given file
-  object using its write method and optionally sent to the console if
+  Executes a pipeline of commands with each command running in its own process,
+  capturing pipeline's output.
+
+  If `regex` is not `None`, all matches are returned as a list (depending on the
+  number of capture groups, each match is a tuple of values of all groups, a
+  value of the only group, or a full match otherwise).
+
+  If `file` is not `None`, all output will be sent to the given file object
+  using its write method and optionally sent to the console if
   `g_args.log_to_console` is also set.
 
-  Note that commands is expected to be a list where each entry is also a list
-  which is passed to subprocess.Popen to execute a command. If there is only
+  If `output_regex` is not `None`, lines matching it will be always send to the
+  console, regardless of `file` or `g_args.log_to_console` values. It can also
+  be a tuple, where the first regex matches lines to send, and the second regex
+  matches lines to always skip, or `None` to let the first regex decide. When
+  the second regex is not `None`, `None` for the first one matches all lines.
+
+  Note that `commands` is expected to be a list where each entry is also a list
+  which is passed to `subprocess.Popen` to execute a command. If there is only
   one command in the list, then it is simply executed in a new process without
   building up a pipeline.
 
@@ -466,7 +478,14 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
   if not file:
     file = g_output_file
 
-  recomp = re.compile (regex) if regex else None
+  rec = re.compile (regex) if regex else None
+  if isinstance (output_regex, tuple):
+    output_rec = re.compile (output_regex [0]) if output_regex [0] else None
+    output_no_rec = re.compile (output_regex [1]) if output_regex [1] else None
+  else:
+    output_rec = re.compile (output_regex) if output_regex else None
+    output_no_rec = None
+
   lines = []
   rc = 0
 
@@ -474,7 +493,10 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
   # Also makes no sense to capture if file equals to sys.stdout (unless regex
   # is given). If file is None, we have to capture to hide any output at all.
   duplicate_output = g_args.log_to_console and file != sys.stdout
-  capture_output = duplicate_output or bool (recomp) or not file
+  capture_output = duplicate_output or bool (rec) or bool (output_rec) or bool (output_no_rec) or not file
+  capture_file = None
+  procs: list [subprocess.Popen] = []
+
   try:
 
     cmd = commands [0]
@@ -486,8 +508,7 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
         capture_file = proc.stdout
       else:
         proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, text = True, cwd = cwd, env = g_run_env)
-
-      last_proc = proc
+      procs.append (proc)
 
     else:
 
@@ -498,27 +519,38 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
       else:
         wpipe = file
 
-      proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = wpipe, cwd = cwd, env = g_run_env)
-
-      last_proc = proc
-      for cmd in commands [1:]:
-        last_proc = subprocess.Popen (cmd, stdin = last_proc.stdout,
-                                      stdout = wpipe if cmd == commands [-1] else subprocess.PIPE,
-                                      stderr = wpipe, cwd = cwd, env = g_run_env)
-
-      if capture_output:
-        os.close (wpipe)
+      try:
+        proc = subprocess.Popen (cmd, stdout = subprocess.PIPE, stderr = wpipe, cwd = cwd, env = g_run_env)
+        procs.append (proc)
+        for c in range (1, len (commands)):
+          cmd = commands [c]
+          last_stdout = procs [-1].stdout
+          try:
+            proc = subprocess.Popen (cmd, stdin = last_stdout,
+              stdout = wpipe if c == len (commands) - 1 else subprocess.PIPE,
+              stderr = wpipe, cwd = cwd, env = g_run_env)
+            procs.append (proc)
+          finally:
+            last_stdout.close ()
+      finally:
+        if capture_output:
+          os.close (wpipe)
 
     if capture_output:
       for line in iter (capture_file.readline, ''):
-        if recomp:
-          lines += recomp.findall (line)
-        if duplicate_output:
+        if rec:
+          lines += rec.findall (line)
+        wrote_stdout = False
+        if (not output_no_rec or not output_no_rec.search (line)) and \
+          ((output_no_rec and not output_rec) or (output_rec and \
+            output_rec.search (line)) or duplicate_output):
           sys.stdout.write (line)
-        if file:
+          sys.stdout.flush ()
+          wrote_stdout = True
+        if file and (file != sys.stdout or not wrote_stdout):
           file.write (line)
 
-    rc = last_proc.wait ()
+    rc = procs [-1].wait ()
     if rc:
       msg = f'Non-zero exit code {rc}'
 
@@ -529,20 +561,25 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
 
   finally:
 
+    if capture_file:
+      capture_file.close ()
+    for p in procs:
+      p.wait ()
+
     if rc:
-      raise RunError (' '.join (cmd), msg)
+      raise RunError (' '.join (cmd), msg, lines = lines)
 
   return lines
 
 
-def run (command, regex = None, cwd = None):
+def run (command, regex = None, file = None, cwd = None, output_regex = None):
   '''
   Shortcut to `run_pipe` for one command.
   '''
-  return run_pipe ([command], regex, cwd = cwd)
+  return run_pipe ([command], regex, file, cwd, output_regex)
 
 
-def run_pipe_log (log_file, commands, regex = None, cwd = None):
+def run_pipe_log (log_file, commands, regex = None, cwd = None, output_regex = None):
   '''
   Similar to `run_pipe` but all output produced by and external commands is
   redirected to `log_file`.
@@ -557,13 +594,14 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
 
       rc = 0
       msg = 'exit code 0'
-      lines = run_pipe (commands, regex, f, cwd = cwd)
+      lines = run_pipe (commands, regex, f, cwd, output_regex)
 
     except RunError as e:
 
       rc = 1
       cmd = e.cmd
       msg = e.msg
+      lines = e.lines
 
     finally:
 
@@ -572,16 +610,16 @@ def run_pipe_log (log_file, commands, regex = None, cwd = None):
       f.write (f'[{end_ts.strftime (DATETIME_FMT)} - {msg}, {elapsed} s]\n')
 
       if rc:
-        raise RunError (cmd, msg, log_file = log_file)
+        raise RunError (cmd, msg, log_file = log_file, lines = lines)
 
   return lines
 
 
-def run_log (log_file, command, regex = None):
+def run_log (log_file, command, regex = None, cwd = None, output_regex = None):
   '''
   Shortcut to `run_pipe_log` for one command.
   '''
-  return run_pipe_log (log_file, [command], regex)
+  return run_pipe_log (log_file, [command], regex, cwd, output_regex)
 
 
 def func_log (log_file, func):
