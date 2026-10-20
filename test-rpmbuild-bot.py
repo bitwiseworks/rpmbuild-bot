@@ -193,7 +193,7 @@ class BootstrapTests (unittest.TestCase):
 
     self.bot.collect_build_requires = Mock (return_value = ({'rpm_macro(first)'}, {'first'}))
     self.bot.run.return_value = ['rpm_macro(first)']
-    with self.assertRaisesRegex (self.bot.Error, 'Undefined macros: %first'):
+    with self.assertRaisesRegex (self.bot.Error, r'1 unavailable package\(s\)'):
       self.bot.bootstrap_build_requires ('test.spec', [])
     self.assertEqual (self.bot.run.call_count, 1)
 
@@ -201,7 +201,7 @@ class BootstrapTests (unittest.TestCase):
 
     self.bot.collect_build_requires = Mock (return_value = ({'gcc', 'rpm_macro(first)'}, {'first'}))
     self.bot.run.return_value = ['gcc', 'rpm_macro(first)']
-    with self.assertRaisesRegex (self.bot.Error, '1 unavailable package'):
+    with self.assertRaisesRegex (self.bot.Error, r'2 unavailable package\(s\)'):
       self.bot.bootstrap_build_requires ('test.spec', [])
     self.assertEqual (self.bot.collect_build_requires.call_count, 1)
 
