@@ -14,6 +14,8 @@ VERSION = '0.1'
 
 RPMBUILD_EXE = 'rpmbuild.exe'
 RPM2CPIO_EXE = 'rpm2cpio.exe'
+RPMSPEC_EXE = 'rpmspec.exe'
+YUM_EXE = 'yum.exe'
 CPIO_EXE = 'cpio.exe'
 
 
@@ -1017,6 +1019,81 @@ def get_spec_scm_source (config: Config, spec_base):
   return []
 
 
+def collect_build_requires (full_spec, options):
+  '''
+  Query static build requirements, temporarily swallowing missing structural
+  macros with stubs. Stubs exist only in the query process and never reach a
+  real build.
+  '''
+
+  def query (args):
+    try:
+      return subprocess.run (args, capture_output = True, text = True, env = g_run_env, check = False)
+    except OSError as e:
+      raise RunError (' '.join (args), f'OS Error {e.errno} {e.strerror}')
+
+  faked = set ()
+  stub_options = '-' if g_rpm_macros_support_dash else 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  query_args = [RPMSPEC_EXE, '-q', '--buildrequires'] + options
+
+  for attempt in range (64):
+    definitions = [f'--define={name}({stub_options}) %{{nil}}' for name in sorted (faked)]
+    args = query_args + definitions + [full_spec]
+    result = query (args)
+    if result.returncode == 0:
+      requirements = set ()
+      for line in result.stdout.splitlines ():
+        requirement = line.strip ()
+        if not requirement or requirement.startswith ('rpmlib('):
+          continue
+        if '%' in requirement:
+          raise Error ('BuildRequires', f'Unexpanded dependency: {requirement}')
+        requirements.add (requirement)
+      requirements.update (f'rpm_macro({name})' for name in faked)
+      return requirements, faked
+
+    matches = [match for line in result.stderr.splitlines () if (match := g_unknown_tag_re.search (line))]
+    missing = {match.group (1) or match.group (2) for match in matches} - faked
+    if not missing:
+      return None, faked
+
+    faked.update (missing)
+
+  raise Error ('BuildRequires', f'Too many missing-macro retries ({attempt + 1})')
+
+
+def bootstrap_build_requires (full_spec, options):
+  '''
+  Install discovered requirements and reparse with freshly loaded real macros.
+  Repeat because real macros can introduce further requirements or macros.
+  '''
+
+  attempted = set ()
+  for attempt in range (64):
+    requirements, faked = collect_build_requires (full_spec, options)
+    if not requirements:
+      log_warn ('Could not get spec file build requirements')
+      return
+    pending = requirements - attempted
+    if not pending:
+      if faked:
+        raise Error ('BuildRequires', f'Undefined macros: %{', %'.join (sorted (faked))}')
+      return
+    log (f'Installing spec file build requirements{f'(attempt {attempt + 1})' if attempt else ''}...')
+    # Collect unavailable packages, hide some noise from output
+    missing = run ([YUM_EXE, '-y', 'install'] + sorted (pending),
+      r'^(?:No package (.+) available.*)$', g_log,
+      output_regex = (None,
+        r'^(?:\s+|-*>.*|Package .* already installed.*)$'))
+    if len (missing):
+      raise Error ('BuildRequires', f'{len (missing)} unavailable package(s)')
+
+    attempted.update (pending)
+    # collect_build_requires starts with no fake definitions on every pass.
+
+  raise Error ('BuildRequires', 'Too many dependency installation attempts')
+
+
 def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config):
   '''
   Prepare for build and test commands. This includes the following:
@@ -1184,8 +1261,12 @@ def build_cmd ():
       log_file = os.path.join (log_base, f'{arch}.log')
       log (f'Creating RPMs for `{arch}` target (logging to {log_file})...')
 
+      common_opts = [f'--target={arch}', f'--define=_sourcedir {source_dir}']
+
+      bootstrap_build_requires (full_spec, common_opts)
+
       rpms = run_log (log_file,
-        [RPMBUILD_EXE, f'--target={arch}', '-bb', f'--define=_sourcedir {source_dir}', full_spec],
+        [RPMBUILD_EXE, '-bb', full_spec] + common_opts,
         rf'^Wrote: +(.+\.(?:{arch}|noarch)\.rpm)$')
 
       if len (rpms):
@@ -1354,9 +1435,13 @@ def test_cmd ():
 
     log (f'Creating test RPMs for `{base_arch}` target (logging to {log_file})...')
 
+    common_opts = [f'--target={base_arch}', '--define=dist %nil',
+      f'--define=_sourcedir {source_dir}']
+
+    bootstrap_build_requires (full_spec, common_opts + scm_opts)
+
     rpms = run_log (log_file,
-      [ RPMBUILD_EXE, f'--target={base_arch}', '--define=dist %nil',
-        f'--define=_sourcedir {source_dir}' ] + scm_opts + opts + [ full_spec ],
+      [RPMBUILD_EXE, full_spec] + common_opts + scm_opts + opts,
       rf'^Wrote: +(.+\.(?:{base_arch}|noarch)\.rpm)$')
 
     # Show the generated RPMs when appropriate.
@@ -1832,6 +1917,9 @@ g_log = None
 # Cache of RPM macro values.
 g_rpm = {}
 
+# Whether parameterized macros can disable option processing with (-).
+g_rpm_macros_support_dash = False
+
 # RPM macros to pre-evaluate.
 g_rpmbuild_used_macros = ['_topdir', '_sourcedir', 'dist', '_bindir', '_rpmdir', '_srcrpmdir']
 
@@ -1961,6 +2049,9 @@ g_config = Config (g_rpm)
 # List of lists, SCRIPT_INI_FILE in the 1st dir of each nested list is subject to loading.
 g_spec_dirs = []
 
+# Unknown macro regex for collect_build_requires
+g_unknown_tag_re = re.compile (r'^error: .*?Unknown tag: %(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(?=\s|$)')
+
 rc = 255
 
 try:
@@ -2002,6 +2093,18 @@ try:
   for m in ['_topdir', '_sourcedir']:
     if not g_rpm [m] or not os.path.isdir (g_rpm [m]):
       raise Error (f'Value of `%{m}` in rpmbuild is `{g_rpm [m]}` and not a directory')
+
+  # RPM >= 4.17 supports (-), which disables macro option processing. Probe once so this also works
+  # with backported support on older RPMs.
+
+  try:
+    g_rpm_macros_support_dash = not command_output ([
+      RPMSPEC_EXE,
+      '--define=__rpmbuild_bot_bootstrap(-) %{nil}',
+      '--eval', '%__rpmbuild_bot_bootstrap --long-option -n value'
+    ]).strip ()
+  except Error:
+    g_rpm_macros_support_dash = False
 
   # Prepare some (non-rpmbuild-standard) directories.
 
