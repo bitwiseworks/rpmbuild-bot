@@ -1,4 +1,4 @@
-"""Runs some rpmbuild-bot2 tests without starting the bot or RPM/Yum."""
+"""Runs some rpmbuild-bot tests without starting the bot or RPM/Yum."""
 
 import ast
 import contextlib
@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 
 def load_bootstrap ():
 
-  path = Path (__file__).with_name ('rpmbuild-bot2.py')
+  path = Path (__file__).with_name ('rpmbuild-bot.py')
   tree = ast.parse (path.read_text (), filename = str (path))
   names =\
   {

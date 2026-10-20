@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 #
-# RPM Build Bot 2
+# RPM Build Bot
 #
 # Author: Dmitrii Kuminov <coding@dmik.org>
 #
@@ -19,8 +19,8 @@ YUM_EXE = 'yum.exe'
 CPIO_EXE = 'cpio.exe'
 
 
-SCRIPT_INI_FILE = 'rpmbuild-bot2.ini'
-SCRIPT_LOG_FILE = 'rpmbuild-bot2.log'
+SCRIPT_INI_FILE = 'rpmbuild-bot.ini'
+SCRIPT_LOG_FILE = 'rpmbuild-bot.log'
 
 DATETIME_FMT = '%Y-%m-%d %H:%M:%S%z'
 
