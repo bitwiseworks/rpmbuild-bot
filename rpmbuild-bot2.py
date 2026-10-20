@@ -343,7 +343,7 @@ def command_output (command, cwd = None):
     with open (os.devnull, 'w') as fNull:
       return subprocess.check_output (command, stderr = fNull, cwd = cwd, env = g_run_env, text = True)
   except subprocess.CalledProcessError as e:
-    raise RunError (' '.join (command), f'Non-zero exit status {e.returncode}')
+    raise RunError (' '.join (command), f'Non-zero exit code {e.returncode}')
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -352,11 +352,11 @@ def shell_output (command, cwd = None):
   '''
   Runs a shell command in a separate process and captures its output.
 
-  This is a simplified shortcut to subprocess.check_output that raises RunError
+  This is a simplified shortcut to `subprocess.check_output` that raises RunError
   on failure. Command must be a string representing a shell command. Command's
   or shell's stderr is discarded.
 
-  Note that this function will raise subprocess.CalledProcessError if the
+  Note that this function will raise `subprocess.CalledProcessError` if the
   command exits with a non-zero return code. To suppress this exception (and
   get the return code together with the output, use `shell_output_rc`.
   '''
@@ -364,7 +364,7 @@ def shell_output (command, cwd = None):
     with open (os.devnull, 'w') as fNull:
       return subprocess.check_output (command, stderr = fNull, shell = True, cwd = cwd, env = g_run_env, text = True)
   except subprocess.CalledProcessError as e:
-    raise RunError (' '.join (command), f'Non-zero exit status {e.returncode}')
+    raise RunError (' '.join (command), f'Non-zero exit code {e.returncode}')
   except OSError as e:
     raise RunError (' '.join (command), str (e))
 
@@ -427,7 +427,7 @@ def command (command, cwd = None):
     log (f'Running `{command_str}`...')
     subprocess.check_call (command, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
-    raise RunError (command_str, f'Non-zero exit status {e.returncode}')
+    raise RunError (command_str, f'Non-zero exit code {e.returncode}')
   except OSError as e:
     raise RunError (command_str, str (e))
 
@@ -442,7 +442,7 @@ def shell (command, cwd = None):
     log (f'Running [{command_str}]...')
     subprocess.check_call (command, shell = True, cwd = cwd, env = g_run_env)
   except subprocess.CalledProcessError as e:
-    raise RunError (command_str, f'Non-zero exit status {e.returncode}')
+    raise RunError (command_str, f'Non-zero exit code {e.returncode}')
   except OSError as e:
     raise RunError (command_str, str (e))
 
@@ -487,6 +487,8 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
       else:
         proc = subprocess.Popen (cmd, stdout = file, stderr = subprocess.STDOUT, text = True, cwd = cwd, env = g_run_env)
 
+      last_proc = proc
+
     else:
 
       if capture_output:
@@ -516,21 +518,14 @@ def run_pipe (commands, regex = None, file = None, cwd = None):
         if file:
           file.write (line)
 
-    if len (commands) > 1:
-      # TODO: we ignore the child exit code at the moment due to this bug:
-      # http://trac.netlabs.org/rpm/ticket/267#ticket
-      # Once it's fixed, we should report it to the caller. Note that we can
-      # ignore it now only because CPIO_EXE luckily works per se, it just can't
-      # close its end of the pipe gracefully (and e.g grep doesnt' work at all).
-      rc = last_proc.wait ()
-
-    rc = proc.wait ()
-    msg = f'exit code {rc}'
+    rc = last_proc.wait ()
+    if rc:
+      msg = f'Non-zero exit code {rc}'
 
   except OSError as e:
 
     rc = 1
-    msg = f'error {e.errno} {e.strerror}'
+    msg = f'OS Error {e.errno} {e.strerror}'
 
   finally:
 
@@ -549,8 +544,8 @@ def run (command, regex = None, cwd = None):
 
 def run_pipe_log (log_file, commands, regex = None, cwd = None):
   '''
-  Similar to `run_pipe` but all output produced by and external commands will be
-  be redirected to a log file.
+  Similar to `run_pipe` but all output produced by and external commands is
+  redirected to `log_file`.
   '''
 
   with open (log_file, 'w', buffering = 1) as f:
@@ -984,11 +979,11 @@ def build_prepare (full_spec, spec_base, spec_aux_dir, source_dir, archs, config
   '''
   Prepare for build and test commands. This includes the following:
 
-  - Copy files from spec_aux_dir to source_dir (to be used as an override for
-    `_sourcedir` when calling rpmbuild for full_spec).
+  - Copy files from `spec_aux_dir` to `source_dir` (to be used as an override
+    for `_sourcedir` when calling rpmbuild for `full_spec`).
 
   - Download legacy runtime libraries for the given spec if spec legacy is
-    configured (TODO: Actually implement it).
+    configured.
   '''
 
   ensure_dir (source_dir)
