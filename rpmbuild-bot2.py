@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 #
 # RPM Build Bot 2
@@ -750,6 +750,10 @@ def resolve_spec (spec, spec_dirs, config):
   if config.has_section ('environment'):
     for var in config.options ('environment'):
       g_run_env [var] = config.get ('environment', var)
+
+  # Force English messages as we regex on command output
+  g_run_env ['LC_ALL'] = 'C'
+  g_run_env ['LANG'] = 'C'
 
   return (full_spec, spec_base, spec_aux_dir)
 
