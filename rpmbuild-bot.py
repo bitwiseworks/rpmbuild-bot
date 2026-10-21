@@ -1438,7 +1438,8 @@ def test_cmd ():
     common_opts = [f'--target={base_arch}', '--define=dist %nil',
       f'--define=_sourcedir {source_dir}']
 
-    bootstrap_build_requires (full_spec, common_opts + scm_opts)
+    if g_args.STEP in ['all', 'prep']:
+      bootstrap_build_requires (full_spec, common_opts + scm_opts)
 
     rpms = run_log (log_file,
       [RPMBUILD_EXE, full_spec] + common_opts + scm_opts + opts,
