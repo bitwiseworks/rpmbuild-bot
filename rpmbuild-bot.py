@@ -27,6 +27,8 @@ DATETIME_FMT = '%Y-%m-%d %H:%M:%S%z'
 VER_FULL_REGEX = r'\d+[.\d\w]*-\w+[.\w]*\.\w+'
 BUILD_USER_REGEX = r'[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
 
+ERROR_REGEX = r'[Ee][Rr][Rr][Oo][Rr][Ss]?:'
+
 
 import argparse
 import configparser
@@ -43,6 +45,7 @@ import sys
 import textwrap
 import time
 import traceback
+from collections import deque
 
 
 class Config (configparser.ConfigParser):
@@ -113,7 +116,7 @@ class Config (configparser.ConfigParser):
           ret = ret.replace (f'${{{f_section}{f_option}}}', sub)
         except RunError as e:
           raise configparser.InterpolationError (section, option,
-            f'Failed to interpolate ${{{f_section}{f_option}}}:\nThe following command failed with: {e.msg}:\n  {e.cmd}')
+            f'Failed to interpolate ${{{f_section}{f_option}}}:\nThe following command failed with: {e.msg}:\n| {e.cmd}')
       else:
         raise configparser.InterpolationDepthError (option, section, ret)
 
@@ -1446,7 +1449,7 @@ def test_cmd ():
       rf'^Wrote: +(.+\.(?:{base_arch}|noarch)\.rpm)$')
 
     # Show the generated RPMs when appropriate.
-    if g_args.STEP == 'all' or g_args.STEP == 'pack':
+    if g_args.STEP in ['all', 'pack']:
       if len (rpms):
         log ('Successfully generated the following RPMs:')
         log ('\n'.join (rpms))
@@ -2053,6 +2056,8 @@ g_spec_dirs = []
 # Unknown macro regex for collect_build_requires
 g_unknown_tag_re = re.compile (r'^error: .*?Unknown tag: %(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(?=\s|$)')
 
+g_error_re = re.compile (ERROR_REGEX)
+
 rc = 255
 
 try:
@@ -2144,10 +2149,57 @@ except OSError as e:
 
 except RunError as e:
 
-  msg = f'The following command failed with: {e.msg}:\n  {e.cmd}'
+  msg = f'The following command failed with: {e.msg}:\n| {e.cmd}'
+  note = None
   if not e.hint and e.log_file:
+    try:
+      # Show last error lines with context from the log (or the tail if no errors)
+      with open (e.log_file) as f:
+        maxlines = 20 + 1 # log file footer
+        errlines = 2 # error context lines (before/after)
+        errctx = deque [tuple [int, str, bool]] (maxlen = maxlines)
+        lines = deque [tuple [int, str, bool]] (maxlen = maxlines)
+        seen_err = False
+        ln = 0
+        for line in f:
+          ln += 1
+          if ln == 1 or not line.strip ():
+            continue # Skip log file header and emepty lines
+          if g_error_re.search (line):
+            seen_err = True
+            lines.extend ([errctx [l] for l in range (- min (len (errctx), errlines), 0)])
+            lines.append ((ln, line, True))
+            errctx.clear ()
+          else:
+            errctx.append ((ln, line, False))
+            if seen_err and len (errctx) == errlines:
+              lines.extend (errctx)
+              errctx.clear ()
+              seen_err = False
+        if len (errctx):
+          if not (lines):
+            note = True # Last xxx lines
+            lines.extend (errctx)
+          elif seen_err:
+            lines.extend ([errctx [l] for l in range (min (len (errctx), errlines))])
+        if len (lines) and lines [-1][0] == ln:
+          lines.pop () # Remove the log file footer
+        if len (lines):
+          if note:
+            note = f'Last {len (lines)} lines of command output:\n'
+          else:
+            note = f'Selected {len (lines)} noteworthy lines from command output:\n'
+          ln = len (str (lines [-1][0]))
+          for n, l, err in lines:
+            note += f'{n:{ln}}{'*' if err else ' '}| {l}'
+        else:
+          note = 'Command produced no output with non-empty lines'
+    except OSError as e2:
+      note = f'Failed reading log file: {e2}'
     e.hint = f'Inspect `{e.log_file}` for more info.'
   log_err (e.prefix, msg)
+  if note:
+    log_note (note)
   if e.hint:
     log_hint (e.hint)
   rc = e.code
