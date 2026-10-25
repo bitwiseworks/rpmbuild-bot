@@ -36,6 +36,7 @@ import copy
 import datetime
 import fnmatch
 import getpass  # for user and hostname
+import io
 import os
 import re
 import shutil
@@ -550,7 +551,6 @@ def run_pipe (commands, regex = None, file = None, cwd = None, output_regex = No
           ((output_no_rec and not output_rec) or (output_rec and \
             output_rec.search (line)) or duplicate_output):
           sys.stdout.write (line)
-          sys.stdout.flush ()
           wrote_stdout = True
         if file and (file != sys.stdout or not wrote_stdout):
           file.write (line)
@@ -2128,6 +2128,9 @@ try:
     g_log = open (d, 'w', buffering = 1)  # noqa: SIM115
     sys.stdout.write (f'[Logging to {d}]\n')
   else:
+    # Switch to line bufering to get instant line output 
+    if isinstance (sys.stdout, io.TextIOWrapper):
+      sys.stdout.reconfigure (line_buffering = True)
     g_log = sys.stdout
     sys.stdout.write ('[Logging to <console, redirected>]\n')
 
