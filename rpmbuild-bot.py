@@ -12,24 +12,6 @@
 VERSION = '0.1'
 
 
-RPMBUILD_EXE = 'rpmbuild.exe'
-RPM2CPIO_EXE = 'rpm2cpio.exe'
-RPMSPEC_EXE = 'rpmspec.exe'
-YUM_EXE = 'yum.exe'
-CPIO_EXE = 'cpio.exe'
-
-
-SCRIPT_INI_FILE = 'rpmbuild-bot.ini'
-SCRIPT_LOG_FILE = 'rpmbuild-bot.log'
-
-DATETIME_FMT = '%Y-%m-%d %H:%M:%S%z'
-
-VER_FULL_REGEX = r'\d+[.\d\w]*-\w+[.\w]*\.\w+'
-BUILD_USER_REGEX = r'[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
-
-ERROR_REGEX = r'[Ee][Rr][Rr][Oo][Rr][Ss]?:'
-
-
 import argparse
 import configparser
 import copy
@@ -47,6 +29,38 @@ import textwrap
 import time
 import traceback
 from collections import deque
+
+import rpm
+
+
+RPMBUILD_EXE = 'rpmbuild.exe'
+RPM2CPIO_EXE = 'rpm2cpio.exe'
+RPMSPEC_EXE = 'rpmspec.exe'
+YUM_EXE = 'yum.exe'
+CPIO_EXE = 'cpio.exe'
+
+
+SCRIPT_INI_FILE = 'rpmbuild-bot.ini'
+SCRIPT_LOG_FILE = 'rpmbuild-bot.log'
+
+DATETIME_FMT = '%Y-%m-%d %H:%M:%S%z'
+
+VER_FULL_REGEX = r'\d+[.\d\w]*-\w+[.\w]*\.\w+'
+BUILD_USER_REGEX = r'[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+'
+
+ERROR_REGEX = r'[Ee][Rr][Rr][Oo][Rr][Ss]?:'
+
+DEPENDENCY_REGEX = r'\s*([^\s<>=!]+)\s*(?:(<=|>=|==|=|<|>)\s*([^\s<>=!]+))?\s*'
+DEPENDENCY_OPS =\
+{
+  None: 0,
+  "=": rpm.RPMSENSE_EQUAL,
+  "==": rpm.RPMSENSE_EQUAL,
+  "<": rpm.RPMSENSE_LESS,
+  ">": rpm.RPMSENSE_GREATER,
+  "<=": rpm.RPMSENSE_LESS | rpm.RPMSENSE_EQUAL,
+  ">=": rpm.RPMSENSE_GREATER | rpm.RPMSENSE_EQUAL,
+}
 
 
 class Config (configparser.ConfigParser):
@@ -157,10 +171,11 @@ class RunError (Error):
   Error exception for #run and #run_pipe functions. See Error for more info.
   '''
   code = 102
-  def __init__ (self, cmd, msg, hint = None, log_file = None, lines = None):
+  def __init__ (self, cmd, msg, hint = None, log_file = None, lines = None, rc = None):
     self.cmd = cmd
     self.log_file = log_file
     self.lines = lines
+    self.rc = rc
     Error.__init__ (self, msg, hint = hint)
 
 
@@ -583,7 +598,7 @@ def run_pipe (commands, regex = None, file = None, cwd = None, output_regex = No
       p.wait ()
 
     if rc:
-      raise RunError (' '.join (cmd), msg, lines = lines)
+      raise RunError (' '.join (cmd), msg, lines = lines, rc = rc)
 
   return lines
 
@@ -1075,6 +1090,25 @@ def collect_build_requires (full_spec, options):
   raise Error ('BuildRequires', f'Too many missing-macro retries ({attempt + 1})')
 
 
+def installed_satisfies (dependency):
+  '''
+  Check a simple RPM dependency against installed files and package provides.
+  '''
+  match = g_dependency_re.fullmatch (dependency)
+  if match is None:
+      raise Error ('BuildRequires', 'Invalid dependency: {!r}'.format (dependency))
+  name, operator, version = match.groups ()
+  flags = DEPENDENCY_OPS [operator]
+  requirement = rpm.ds ((name, flags, version or ""), rpm.RPMTAG_REQUIRENAME)
+  ts = rpm.TransactionSet ()
+  if operator is None and name.startswith ('/'):
+    # Check absolute file path deps using RPM's installed-file index
+    if next (iter (ts.dbMatch (rpm.RPMDBI_INSTFILENAMES, name)), None) is not None:
+      return True
+  return any (rpm.ds(header, rpm.RPMTAG_PROVIDENAME).Search(requirement) >= 0
+    for header in ts.dbMatch (rpm.RPMTAG_PROVIDENAME, name))
+
+
 def bootstrap_build_requires (full_spec, options):
   '''
   Install discovered requirements and reparse with freshly loaded real macros.
@@ -1088,16 +1122,24 @@ def bootstrap_build_requires (full_spec, options):
       log_warn ('Could not get spec file build requirements')
       return
     pending = requirements - attempted
-    if not pending:
+    to_install = [p for p in pending if not installed_satisfies (p)]
+    if not to_install:
       if faked:
         raise Error ('BuildRequires', f'Undefined macros: %{', %'.join (sorted (faked))}')
       return
-    log (f'Installing spec file build requirements{f'(attempt {attempt + 1})' if attempt else ''}...')
+    log (f'Installing spec file build requirements{f' (attempt {attempt + 1})' if attempt else ''}...')
     # Collect unavailable packages, hide some noise from output
-    missing = run ([YUM_EXE, '-y', 'install'] + sorted (pending),
-      r'^(?:No package (.+) available.*)$', g_log,
-      output_regex = (None,
-        r'^(?:\s+|-*>.*|Package .* already installed.*)$'))
+    try:
+      missing = run ([YUM_EXE, '-y', 'install'] + sorted (to_install),
+        r'^(?:No package (.+) available.*)$', g_log,
+        output_regex = (None,
+          r'^(?:\s+|-*>.*|Package .* already installed.*)$'))
+    except RunError as e:
+      # Yum weirdly returns non-zero if all given packages are not available (if
+      # some of them are available and installed, it returns zero); deal with it
+      missing = e.lines
+      if e.rc != 1 or len (missing) != len (to_install):
+        raise
     if len (missing):
       raise Error ('BuildRequires', f'{len (missing)} unavailable package(s)')
 
@@ -2073,6 +2115,7 @@ g_spec_dirs = []
 g_unknown_tag_re = re.compile (r'^error: .*?Unknown tag: %(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))(?=\s|$)')
 
 g_error_re = re.compile (ERROR_REGEX)
+g_dependency_re = re.compile (DEPENDENCY_REGEX)
 
 rc = 255
 
