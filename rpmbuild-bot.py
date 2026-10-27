@@ -178,7 +178,7 @@ def to_unixtimestr (unix_time):
   return time.strftime ('%Y-%m-%d %H:%M:%S UTC', time.gmtime (unix_time))
 
 
-def log (msg, wrap_width = None, file_only = False):
+def log (msg, wrap_width = None):
   '''
   Logs a message to the console and optionally to a file.
 
@@ -198,16 +198,15 @@ def log (msg, wrap_width = None, file_only = False):
     g_output_file.write (msg)
 
     # Note: obey log_to_console only if the console is not redirected to a file.
-    if g_args.log_to_console and g_output_file != sys.stdout and not file_only:
+    if g_args.log_to_console and g_output_file != sys.stdout:
       sys.stdout.write (msg)
 
   else:
 
-    if not file_only:
-      sys.stdout.write (msg)
+    sys.stdout.write (msg)
 
     # Note: log to the file only when the console is not redirected to it.
-    if (g_log and g_log != sys.stdout) or file_only:
+    if g_log and g_log != sys.stdout:
       g_log.write (msg)
 
 
@@ -262,11 +261,23 @@ def log_input (prompt, choice = None, kind = None):
 
   try:
     while True:
-      answer = input (f'{kind_str}{prompt} {choice_str}')
+      log (f'{kind_str}{prompt} {choice_str}')
+      answer = sys.stdin.readline ()
+      if answer == '': # EOF?
+        return None
+      # Normally, readline echoes input to stdout if it's isatty, otherwise
+      # (e.g. stdout is redirected or we also write to a log) do it ourselves.
+      # Note that it doesn't cover ssh cases because LIBCn (and hence Python)
+      # doesn't properly support PTY, so stdout is always redirected here and we
+      # get a duplicate answer line, accept it for now. Ideally, we should query
+      # termios to check if the terminal is actually echoing, but termios API
+      # is limited in LIBCn too.
+      if g_log and g_log != sys.stdout or not sys.stdout.isatty ():
+        g_log.write (answer)
+      answer = answer.rstrip ('\r\n')
       answer_upper = answer.upper ()
       answer_empty = answer == ''
       if not choice or (not answer_empty and answer_upper != choice_upper and answer_upper in choice_upper):
-        log (f'{kind_str}{prompt} {choice_str}{answer}', file_only = True)
         return answer_upper
   except KeyboardInterrupt:
     return None
