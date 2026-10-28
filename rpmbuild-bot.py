@@ -77,6 +77,8 @@ class Config (configparser.ConfigParser):
     standard output of <COMMAND> run by the shell.
   - Support for `${RPM:<NAME>}` interpolation that is replaced with the value of
     the <NAME> RPM macro.
+  - Support for `${RPME:<EXPR>}` interpolation that is replaced with the
+    evaluated result of the <EXPR> RPM expression.
   - Support for copy.deepcopy.
 
   Note: We leave this class in even for Python 3 because of the extensions we
@@ -111,7 +113,7 @@ class Config (configparser.ConfigParser):
     if raw:
       return ret
 
-    for f_section, f_option in re.findall (r'\$\{(\w+:)?((?<=SHELL:).+|\w+)\}', ret):
+    for f_section, f_option in re.findall (r'\${(\w+:)?((?<=SHELL|RPME:).+|\w+)}', ret):
       self.get_depth = self.get_depth + 1
       if self.get_depth < configparser.MAX_INTERPOLATION_DEPTH:
         try:
@@ -126,6 +128,8 @@ class Config (configparser.ConfigParser):
               self.rpm_macros [f_option] = sub
             else:
               sub = self.rpm_macros [f_option]
+          elif f_section == 'RPME:':
+              sub = command_output ([RPMBUILD_EXE, '--eval', f_option]).strip ()
           else:
             sub = self.get (f_section [:-1] or section, f_option, vars = vars)
           ret = ret.replace (f'${{{f_section}{f_option}}}', sub)
