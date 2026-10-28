@@ -1315,6 +1315,8 @@ def build_cmd ():
     arch_rpms = {}
     noarch_rpms = {}
 
+    opts = [f'--define=_buildhost {g_hostname}']
+
     for arch in archs:
 
       log_file = os.path.join (log_base, f'{arch}.log')
@@ -1325,7 +1327,7 @@ def build_cmd ():
       bootstrap_build_requires (full_spec, common_opts)
 
       rpms = run_log (log_file,
-        [RPMBUILD_EXE, '-bb', full_spec] + common_opts,
+        [RPMBUILD_EXE, '-bb', full_spec] + common_opts + opts,
         rf'^Wrote: +(.+\.(?:{arch}|noarch)\.rpm)$')
 
       if len (rpms):
@@ -1354,7 +1356,7 @@ def build_cmd ():
     log (f'Creating SRPM (logging to {log_file})...')
 
     srpm = run_log (log_file,
-      [RPMBUILD_EXE, '-bs', f'--define=_sourcedir {source_dir}', full_spec],
+      [RPMBUILD_EXE, '-bs', f'--define=_sourcedir {source_dir}', full_spec] + opts,
       r'^Wrote: +(.+\.src\.rpm)$') [0]
 
     if not srpm:
@@ -1431,9 +1433,9 @@ def test_cmd ():
     'all': [ '-bb' ],
   }
 
-  opts = []
+  opts = [f'--define=_buildhost {g_hostname}']
   if not purge:
-    opts = g_test_cmd_steps [g_args.STEP]
+    opts += g_test_cmd_steps [g_args.STEP]
 
   # In dev mode, disable source tree removal, see rpm-specs/os2-rpm/macros.scm
   # (also disable fixing permissions as it's unconditional in %setup)
